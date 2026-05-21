@@ -27,9 +27,14 @@
       "max_retries": 3,
       "success_metric": "test -f datasets/transforms.py && python3 -c 'from datasets.transforms import build_transforms; print(build_transforms.__name__)'",
       "checkpoint": null,
-      "status": "completed",
+      "status": "error",
       "started_at": "2026-05-22T07:05:09+0900",
-      "summary": "datasets/transforms.py — build_transforms(short_sides, max_size, flip_prob, mean, std, is_train) + Compose/RandomResize/RandomHorizontalFlip/ToTensor/Normalize + collate_fn (32-multiple zero-padding). torchvision.transforms.functional 사용, detectron2 의존성 0. AC PASS (640x480 PIL → tensor [3,800,1067], boxes shape [1,4])."
+      "summary": "datasets/transforms.py — build_transforms(short_sides, max_size, flip_prob, mean, std, is_train) + Compose/RandomResize/RandomHorizontalFlip/ToTensor/Normalize + collate_fn (32-multiple zero-padding). torchvision.transforms.functional 사용, detectron2 의존성 0. AC PASS (640x480 PIL → tensor [3,800,1067], boxes shape [1,4]).",
+      "error_message": "[4회 시도 후 실패 / crash=Unknown] success_metric 정의됐으나 runs/ 산출물 없음: 'test -f datasets/transforms.py && python3 -c 'from datasets.transforms import build_transforms; print(build_transforms.__name__)''",
+      "crash_reason": "Unknown",
+      "crash_evidence": "",
+      "recommended_action": "stderr 전문을 사용자 검토 후 사인 결정 — 자동 재시도 금지",
+      "failed_at": "2026-05-22T07:12:38+0900"
     },
     {
       "step": 1,
