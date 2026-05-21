@@ -1,0 +1,49 @@
+# 빌드 컨텍스트는 프로젝트 루트 (context: ..).
+# 이미지에 들어갈 필요 없거나 들어가면 안 되는 항목.
+
+# VCS / Python 빌드 부산물
+.git
+.gitignore
+.venv
+.env
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Node
+node_modules
+npm-debug.log
+
+# 데이터 / 실험 (대용량 — bind 마운트로 들어옴, 이미지에 포함 X)
+data/
+runs/
+wandb/
+outputs/
+
+# 모델 가중치 / 체크포인트 (CRITICAL — .gitignore 와 일치)
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# 로그
+*.log
+
+# 레퍼런스 (읽기 전용, bind 로만 노출)
+DiffusionDet/.git
+DiffusionDet/images
+
+# 하네스 phase 진행 파일
+phases/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

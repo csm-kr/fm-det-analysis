@@ -1,0 +1,66 @@
+{
+  "project": "fm-det",
+  "phase": "data-sanity-coco-train",
+  "group": "A",
+  "automation": "review-each",
+  "hypothesis": null,
+  "baseline_run_id": null,
+  "eval_spec": {
+    "task": "detection",
+    "metric_primary": "n/a",
+    "metric_lib": "pycocotools==2.0.7",
+    "input_format": { "pred": "n/a", "gt": "xyxy_class" },
+    "success_threshold": null
+  },
+  "scope": {
+    "dataset": "COCO 2017",
+    "splits": ["train"],
+    "rationale": "P0 baseline 학습용 train 분할 — 118,287 장 / ~18GB. data-sanity-coco (val) 의 후속 phase. val 과 동일한 분석 파이프라인 (datasets/coco/sanity.py / visualize.py / report.py) 을 train split 으로 재실행."
+  },
+  "steps": [
+    {
+      "step": 0,
+      "name": "download-coco-train",
+      "kind": "data-sanity",
+      "timeout_sec": 7200,
+      "max_retries": 3,
+      "monitors": [],
+      "success_metric": "jq -e '.image_count == 118287 and .ann_files >= 4 and .integrity_ok == true' runs/{run_dir}/manifest.json",
+      "checkpoint": null,
+      "status": "pending"
+    },
+    {
+      "step": 1,
+      "name": "analyze-coco-train",
+      "kind": "data-sanity",
+      "timeout_sec": 1800,
+      "max_retries": 3,
+      "monitors": [],
+      "success_metric": "jq -e '.num_images == 118287 and .num_classes == 80 and .bbox_xyxy_valid == true' runs/{run_dir}/stats.json",
+      "checkpoint": null,
+      "status": "pending"
+    },
+    {
+      "step": 2,
+      "name": "visualize-coco-train",
+      "kind": "data-sanity",
+      "timeout_sec": 1800,
+      "max_retries": 3,
+      "monitors": [],
+      "success_metric": "test -f runs/{run_dir}/figs/class_dist.png && test -f runs/{run_dir}/figs/bbox_size.png && test -f runs/{run_dir}/figs/image_size.png && test -f runs/{run_dir}/figs/samples.png",
+      "checkpoint": null,
+      "status": "pending"
+    },
+    {
+      "step": 3,
+      "name": "report-and-review-train",
+      "kind": "data-sanity",
+      "timeout_sec": 600,
+      "max_retries": 3,
+      "monitors": [],
+      "success_metric": "test -f runs/{run_dir}/report.md && grep -q '## 분포 통계' runs/{run_dir}/report.md",
+      "checkpoint": "CP-1",
+      "status": "pending"
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+{
+  "project": "fm-det",
+  "phase": "data-sanity-voc",
+  "group": "A",
+  "automation": "review-each",
+  "hypothesis": null,
+  "baseline_run_id": null,
+  "eval_spec": {
+    "task": "detection",
+    "metric_primary": "n/a",
+    "metric_lib": "xml.etree (stdlib)",
+    "input_format": { "pred": "n/a", "gt": "xyxy_class_name" },
+    "success_threshold": null
+  },
+  "scope": {
+    "dataset": "PASCAL VOC 2007 + 2012",
+    "splits": ["voc07-trainval", "voc07-test", "voc12-trainval", "voc-trainval-combined"],
+    "rationale": "COCO 와는 별개 데이터셋 — 20 클래스 / XML 어노테이션. data-sanity-coco 와 분리된 phase. baseline 평가 분할 = VOC2007 test (mAP@0.5)."
+  },
+  "steps": [
+    {
+      "step": 0,
+      "name": "download-voc",
+      "kind": "data-sanity",
+      "timeout_sec": 3600,
+      "max_retries": 3,
+      "monitors": [],
+      "success_metric": "jq -e '.integrity_ok == true and .image_counts[\"voc07-trainval\"] == 5011 and .image_counts[\"voc07-test\"] == 4952 and .image_counts[\"voc12-trainval\"] == 11540' runs/{run_dir}/manifest.json",
+      "checkpoint": null,
+      "status": "pending"
+    },
+    {
+      "step": 1,
+      "name": "analyze-voc",
+      "kind": "data-sanity",
+      "timeout_sec": 1800,
+      "max_retries": 3,
+      "monitors": [],
+      "success_metric": "jq -e '.num_classes == 20 and .bbox_xyxy_valid == true and .class_id_valid == true' runs/{run_dir}/stats.json",
+      "checkpoint": null,
+      "status": "pending"
+    },
+    {
+      "step": 2,
+      "name": "visualize-voc",
+      "kind": "data-sanity",
+      "timeout_sec": 1800,
+      "max_retries": 3,
+      "monitors": [],
+      "success_metric": "test -f runs/{run_dir}/figs/class_dist.png && test -f runs/{run_dir}/figs/bbox_size.png && test -f runs/{run_dir}/figs/image_size.png && test -f runs/{run_dir}/figs/samples.png",
+      "checkpoint": null,
+      "status": "pending"
+    },
+    {
+      "step": 3,
+      "name": "report-and-review-voc",
+      "kind": "data-sanity",
+      "timeout_sec": 600,
+      "max_retries": 3,
+      "monitors": [],
+      "success_metric": "test -f runs/{run_dir}/report.md && grep -q 'PASCAL VOC' runs/{run_dir}/report.md",
+      "checkpoint": "CP-1",
+      "status": "pending"
+    }
+  ]
+}

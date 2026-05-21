@@ -18,3 +18,31 @@ phases/**/.lock
 .env
 .env.*
 !.env.example
+
+# ─── ai-ml 산출물 (CLAUDE.md: 가중치/데이터 추적 금지) ───
+data/
+runs/
+wandb/
+outputs/
+.hydra/
+
+# 가중치·체크포인트 (PreToolUse hook 도 함께 차단)
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+
+# python 빌드/캐시
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+build/
+dist/
+
+# OS / 에디터
+.DS_Store
+.vscode/
+.idea/
