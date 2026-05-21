@@ -29,7 +29,7 @@
       "checkpoint": null,
       "status": "completed",
       "started_at": "2026-05-22T07:05:09+0900",
-      "summary": "datasets/transforms.py — build_transforms(short_sides, max_size, flip_prob, mean, std, is_train) + Compose/RandomResize/RandomHorizontalFlip/ToTensor/Normalize + collate_fn (32-multiple zero-padding). torchvision.transforms.functional 사용, detectron2 의존성 0. AC PASS (640x480 PIL → tensor [3,H,W], boxes shape [1,4])."
+      "summary": "datasets/transforms.py — build_transforms(short_sides, max_size, flip_prob, mean, std, is_train) + Compose/RandomResize/RandomHorizontalFlip/ToTensor/Normalize + collate_fn (32-multiple zero-padding). torchvision.transforms.functional 사용, detectron2 의존성 0. AC PASS (640x480 PIL → tensor [3,800,1067], boxes shape [1,4])."
     },
     {
       "step": 1,
