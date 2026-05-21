@@ -1,0 +1,7 @@
+{
+  "phases": [
+    { "dir": "data-sanity-coco", "status": "completed", "group": "A" },
+    { "dir": "data-sanity-coco-train", "status": "in_progress", "group": "A" },
+    { "dir": "data-sanity-voc", "status": "in_progress", "group": "A" }
+  ]
+}

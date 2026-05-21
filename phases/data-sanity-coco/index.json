@@ -1,0 +1,74 @@
+{
+  "project": "fm-det",
+  "phase": "data-sanity-coco",
+  "group": "A",
+  "automation": "review-each",
+  "hypothesis": null,
+  "baseline_run_id": null,
+  "eval_spec": {
+    "task": "detection",
+    "metric_primary": "n/a",
+    "metric_lib": "pycocotools==2.0.7",
+    "input_format": { "pred": "n/a", "gt": "xyxy_class" },
+    "success_threshold": null
+  },
+  "scope": {
+    "dataset": "COCO 2017",
+    "splits": ["val"],
+    "rationale": "P0 baseline 의 평가 분할만 우선 (~1.25GB). train2017 (18GB) 은 P0 학습 phase 직전에 추가 다운."
+  },
+  "steps": [
+    {
+      "step": 0,
+      "name": "download-coco-val",
+      "kind": "data-sanity",
+      "timeout_sec": 3600,
+      "max_retries": 3,
+      "monitors": [],
+      "success_metric": "jq -e '.val_images == 5000 and .ann_files >= 4 and .integrity_ok == true' runs/{run_dir}/manifest.json",
+      "checkpoint": null,
+      "status": "completed",
+      "run_dirs": ["data-sanity-download-20260521-1332"],
+      "summary": "val2017 5000장 + annotations 6 파일 / integrity OK (zips 1.02GB)"
+    },
+    {
+      "step": 1,
+      "name": "analyze-coco-val",
+      "kind": "data-sanity",
+      "timeout_sec": 1800,
+      "max_retries": 3,
+      "monitors": [],
+      "success_metric": "jq -e '.num_images == 5000 and .num_classes == 80 and .bbox_xyxy_valid == true' runs/{run_dir}/stats.json",
+      "checkpoint": null,
+      "status": "completed",
+      "run_dirs": ["data-sanity-analyze-20260521-1335"],
+      "summary": "val 5000장 / 36,781 ann / 80 cls / xyxy valid / 4952 with-ann, 48 background-only"
+    },
+    {
+      "step": 2,
+      "name": "visualize-coco-val",
+      "kind": "data-sanity",
+      "timeout_sec": 1800,
+      "max_retries": 3,
+      "monitors": [],
+      "success_metric": "test -f runs/{run_dir}/figs/class_dist.png && test -f runs/{run_dir}/figs/bbox_size.png && test -f runs/{run_dir}/figs/image_size.png && test -f runs/{run_dir}/figs/samples.png",
+      "checkpoint": null,
+      "status": "completed",
+      "run_dirs": ["data-sanity-vis-20260521-1335"],
+      "summary": "class_dist / bbox_size / image_size / samples 4 figure 생성 (seed=42 결정적)"
+    },
+    {
+      "step": 3,
+      "name": "report-and-review",
+      "kind": "data-sanity",
+      "timeout_sec": 600,
+      "max_retries": 3,
+      "monitors": [],
+      "success_metric": "test -f runs/{run_dir}/report.md && grep -q '## 분포 통계' runs/{run_dir}/report.md",
+      "checkpoint": "CP-1",
+      "status": "approved",
+      "run_dirs": ["data-sanity-report-20260521-1335"],
+      "summary": "report.md 작성 / DATA_CARD 일치 3/3 ✅ / CP-1 사용자 approve (2026-05-21)"
+    }
+  ]
+}

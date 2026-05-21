@@ -1,0 +1,18 @@
+version: "3.9"
+
+services:
+  harness:
+    build: .
+    image: harness_framework
+    container_name: harness_dev
+    volumes:
+      # 프로젝트 코드만 호스트와 공유
+      # 글로벌 ~/.claude 는 마운트하지 않음 — 컨테이너 안에서 한 번 `claude` 실행 후
+      # 웹 로그인. 인증 토큰은 컨테이너 수명 동안만 유지되며, 재생성 시 다시 로그인.
+      - .:/workspace/harness_framework
+    ports:
+      - "6007:6006"   # TensorBoard
+    stdin_open: true
+    tty: true
+    working_dir: /workspace/harness_framework
+    command: bash

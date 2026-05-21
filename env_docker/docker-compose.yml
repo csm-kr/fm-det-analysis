@@ -1,0 +1,75 @@
+# fm-det dev 환경 — 단일 dev 컨테이너 (사이드 서비스 없음).
+# 모든 도구·런타임은 dev 안에 있고, 호스트에는 Docker + NVIDIA Container Toolkit 만 가정.
+
+name: fm-det
+
+services:
+  dev:
+    build:
+      context: ..                     # 빌드 컨텍스트 = 프로젝트 루트
+      dockerfile: env_docker/Dockerfile
+      target: dev
+      args:
+        CLAUDE_CODE_VERSION: 2.1.123
+        # 호스트 UID/GID 미스매치 회피 — 호스트에서:
+        #   HOST_UID=$(id -u) HOST_GID=$(id -g) docker compose -f env_docker/docker-compose.yml build
+        # 또는 .env 에 HOST_UID=, HOST_GID= 적어두면 자동 반영.
+        HOST_UID: ${HOST_UID:-1000}
+        HOST_GID: ${HOST_GID:-1000}
+    image: fm-det
+    container_name: fm-det_dev
+
+    # ─── GPU runtime (NVIDIA Container Toolkit 필수) ───
+    runtime: nvidia                   # docker-compose 의 legacy 표기 — 신 표기는 deploy.resources
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all              # 모든 가용 GPU 노출 (DDP). 1장만 쓰려면 `count: 1`
+              capabilities: [gpu]
+
+    # ─── PyTorch DataLoader SHM 부족 회피 ───
+    shm_size: 8gb                     # ai-ml 표준. 모자라면 16gb 로 증가
+
+    volumes:
+      # 코드 (호스트 ↔ 컨테이너 공유 — 편집 즉시 반영)
+      - ..:/workspace/fm-det
+
+      # Claude Code 인계 (호스트 OAuth 세션·memory·글로벌 룰 공유)
+      # 호스트에 ~/.claude.json 이 없으면 디렉터리로 잘못 생성될 수 있으므로
+      # ~/.claude (디렉터리) 만 마운트. .claude.json 은 컨테이너 안에서 자동 생성.
+      - ~/.claude:/home/docker_user/.claude
+
+      # 빌드/다운로드 캐시 (named volume — 호스트 더럽히지 않고 재빌드 절약)
+      - pip-cache:/home/docker_user/.cache/pip
+      - hf-cache:/home/docker_user/.cache/huggingface
+
+      # data/ 와 runs/ 는 위 `..` bind 에 자동 포함됨 — 별도 마운트 불필요.
+      # (대용량이라 named volume 으로 격리하고 싶다면 .gitignore 와 함께 호스트 디렉터리 명시적 마운트)
+
+    ports:
+      - "6007:6006"                   # TensorBoard — 호스트 6007 → 컨테이너 6006
+      # W&B 는 외부 SaaS — 포트 노출 불필요
+
+    stdin_open: true
+    tty: true
+    working_dir: /workspace/fm-det
+    command: bash
+
+    # .env 의 기본 변수 자동 주입 + 아래 environment 가 override
+    env_file:
+      - ../.env
+
+    environment:
+      # W&B
+      WANDB_PROJECT: fm-det
+      WANDB_MODE: ${WANDB_MODE:-offline}   # 첫 도입자 default: offline. 익숙해진 후 online
+      # Hydra
+      HYDRA_FULL_ERROR: "1"                # 에러 시 full traceback (디버깅용)
+      # PyTorch
+      PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"   # 메모리 단편화 완화
+
+volumes:
+  pip-cache:
+  hf-cache:

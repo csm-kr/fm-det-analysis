@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fm-det"
+version = "0.0.1"
+description = "DiffusionDet 재구현 + diffusion → flow matching 단계적 전환 연구"
+requires-python = ">=3.11"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["datasets*", "models*", "losses*", "evals*", "utils*"]
+exclude = [
+    "DiffusionDet*",
+    "data*",
+    "runs*",
+    "wandb*",
+    "outputs*",
+    "env_docker*",
+    "scripts*",
+    "phases*",
+    "docs*",
+    "tests*",
+    ".claude*",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
