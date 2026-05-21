@@ -57,7 +57,13 @@
       "max_retries": 3,
       "success_metric": "jq -e '.sanity_pass == true and .batch_shape != null' runs/{run_dir}/sanity.json",
       "checkpoint": null,
-      "status": "pending"
+      "status": "completed",
+      "summary": "datasets/voc/sanity_loader.py — OmegaConf 로 configs/data/voc.yaml 로드 + batch_size override + named split(voc07-trainval/voc07-test/voc12-trainval/voc-trainval-combined) → cfg.train_split/eval_split 오버라이드 후 build_voc_loader 호출. 1-batch 검증 (drop_difficult 적용도 확인). AC PASS: batch_shape=[2,3,800,1088], num_targets_per_image=[1,1], cat_idx_range=[3,18], split=voc07-trainval, sanity_pass=true. jq AC 통과.",
+      "started_at": "2026-05-22T07:23:52+0900",
+      "completed_at": "2026-05-22T07:26:15+0900",
+      "run_dirs": [
+        "code-skeleton-loaders-voc-20260521-222615"
+      ]
     },
     {
       "step": 3,
