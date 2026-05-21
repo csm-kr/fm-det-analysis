@@ -1,0 +1,66 @@
+{
+  "project": "fm-det",
+  "phase": "code-skeleton-loaders",
+  "group": "B",
+  "automation": "review-each",
+  "hypothesis": null,
+  "eval_spec": {
+    "task": "detection",
+    "metric_primary": "n/a"
+  },
+  "scope": {
+    "modules": [
+      "datasets/transforms.py",
+      "datasets/coco/dataset.py",
+      "datasets/voc/dataset.py",
+      "configs/data/coco.yaml",
+      "configs/data/voc.yaml"
+    ],
+    "rationale": "PyTorch Dataset + DataLoader + transforms (DiffusionDet 동치: short 800-1333 + flip 0.5). Hydra configs/data/{coco,voc}.yaml — batch_size 등 재현성 자료."
+  },
+  "steps": [
+    {
+      "step": 0,
+      "name": "transforms-common",
+      "kind": "code",
+      "timeout_sec": 1800,
+      "max_retries": 3,
+      "success_metric": "test -f datasets/transforms.py && python3 -c 'from datasets.transforms import build_transforms; print(build_transforms.__name__)'",
+      "checkpoint": null,
+      "status": "completed",
+      "started_at": "2026-05-22T07:05:09+0900",
+      "summary": "datasets/transforms.py — build_transforms(short_sides, max_size, flip_prob, mean, std, is_train) + Compose/RandomResize/RandomHorizontalFlip/ToTensor/Normalize + collate_fn (32-multiple zero-padding). torchvision.transforms.functional 사용, detectron2 의존성 0. AC PASS."
+    },
+    {
+      "step": 1,
+      "name": "coco-dataset-loader",
+      "kind": "data-sanity",
+      "timeout_sec": 1800,
+      "max_retries": 3,
+      "success_metric": "jq -e '.sanity_pass == true and .batch_shape != null' runs/{run_dir}/sanity.json",
+      "checkpoint": null,
+      "status": "pending"
+    },
+    {
+      "step": 2,
+      "name": "voc-dataset-loader",
+      "kind": "data-sanity",
+      "timeout_sec": 1800,
+      "max_retries": 3,
+      "success_metric": "jq -e '.sanity_pass == true and .batch_shape != null' runs/{run_dir}/sanity.json",
+      "checkpoint": null,
+      "status": "pending"
+    },
+    {
+      "step": 3,
+      "name": "hydra-configs",
+      "kind": "code",
+      "timeout_sec": 600,
+      "max_retries": 3,
+      "success_metric": "test -f configs/data/coco.yaml && test -f configs/data/voc.yaml && python3 -c 'from omegaconf import OmegaConf; OmegaConf.load(\"configs/data/coco.yaml\")'",
+      "checkpoint": null,
+      "status": "pending"
+    }
+  ],
+  "created_at": "2026-05-22T07:05:09+0900"
+}

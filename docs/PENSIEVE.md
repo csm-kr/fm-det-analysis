@@ -8,45 +8,57 @@
 
 ## 마지막 업데이트
 - **일시**: 2026-05-21
-- **갱신자**: Claude (ISSUE/PENSIEVE → docs/ 이동 + M0/M1 마일스톤 도입 + datasets/coco 모듈 정리)
+- **갱신자**: Claude (`code-skeleton-loaders` step 0 `transforms-common` status 갱신 — 코드는 이전 세션에서 작성 완료 상태였음. AC PASS (`build_transforms` import + 640×480 PIL→tensor [3,H,W] + boxes shape [1,4]) 확인 후 index.json status → completed.)
 
 ---
 
 ## 지금 어디 (현재 단계)
-- **전체 단계**: 첫 phase (`data-sanity-coco`) 완료 ✅ + 인프라 정리 완료 (pyproject/.gitignore/Dockerfile-jq 패치). 다음 = train2017 다운로드 + VOC.
-- **활성 phase**: 없음 — 다음 phase (`data-sanity-coco-train`) 설계 직전.
-- **활성 작업**: 없음 (인프라 정리 결과 보고 중).
+- **전체 단계**: 그룹 B 의 datasets / models / losses 코드 작성 완료 + CPU sanity 통과. **I-06 (Blackwell sm_120 PyTorch 호환) 블로커** — Dockerfile patch 완료, 호스트 rebuild 대기. rebuild 후 evals/ → train.py/eval.py/infer.py → P0 학습 흐름.
+- **활성 phase**: `code-skeleton-loaders` (step 0 `transforms-common` ✅ completed — step 1/2 dataset sanity / step 3 hydra-configs 남음) / `model-diffusiondet` (코드 + README mermaid 완료, model-sanity GPU 50-step 은 rebuild 후) / `loss-diffusiondet` (코드 + README mermaid 완료, loss-sanity GPU 50-step rebuild 후).
+- **활성 작업**: 호스트에서 컨테이너 rebuild 대기.
 
 ## 다음 한 가지 (Single Next Action)
 > 막연한 "이것저것" 대신 **다음에 손댈 한 가지**를 적는다. 끝나면 다음 한 가지로 갱신.
 
-**`data-sanity-coco-train` phase 설계 + train2017 (18GB) background 다운로드 시작.** train 받아지는 동안 `data-sanity-voc` phase 도 병행 설계 + 다운로드. 둘 다 다운 완료 후 분석/시각화/리포트 자동 진행.
+**호스트에서 `cd <repo> && make build && make up && make nvidia-test` 재실행 — Dockerfile base 를 `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` 로 2차 patch 완료 (1차 2.6.0 patch 는 wheel 에 sm_120 binary 없어 실패 — PyTorch 의 sm_120 공식 지원은 2.7.0 stable 부터). 검증: `docker compose -f env_docker/docker-compose.yml exec dev python3 -c "import torch; print(torch.__version__, torch.cuda.get_arch_list()); m=torch.nn.Linear(10,10).cuda(); print(float(m(torch.randn(2,10).cuda()).sum()))"` → `2.7.1+cu128 [..., 'sm_120']` + forward 값 출력. 통과 시 entrypoints-evals + train.py 자동 진행.**
 
 이후 순서 (참고만):
-1. ~~`/docker-init`~~ ✅ (R-03)
-2. ~~`data-sanity-coco` val~~ ✅ (CP-1 approved)
-3. ~~인프라 정리 (pyproject / .gitignore / Dockerfile jq)~~ ✅ (R-05 / R-06 / I-05 blocked-rebuild)
-4. **(다음)** `data-sanity-coco-train` — train2017 18GB 다운 + 분포 분석 (delta vs val)
-5. `data-sanity-voc` — VOC 07 + 12 다운 + XML 파싱 + 분포·시각화
-6. `/harness` 로 **P0** `coco-repro-baseline` phase 설계
-7. P0 학습 → COCO val AP 46.2 ± 0.5 매칭 (I-04)
-8. **P0a 메커니즘 진단 5행** — `coco-diag-signal-scale / box-renewal / iter-step / num-boxes / nms-iou`
-9. P0a 5행 OK → P1 `coco-fm1-sampler-cfm` 시작
+1. ~~M0 부트스트래핑~~ ✅
+2. ~~M1 data-sanity-coco val~~ ✅
+3. ~~M2 데이터 sanity 전체 + Hydra base + datasets 구현~~ ✅
+4. ~~`model-diffusiondet` 코드 + README mermaid (110.7M params)~~ ✅ (CPU sanity / GPU sanity rebuild 후)
+5. ~~`loss-diffusiondet` 코드 + README mermaid~~ ✅ (loss 38.5 finite, 314/314 grad CPU)
+6. **(지금)** **호스트 `make build && make up && make nvidia-test`** — Dockerfile patch (PyTorch 2.6.0 + jq/unzip + torch-cache volume) 적용. I-05 / I-06 동시 해소.
+7. GPU 검증 후 `entrypoints-evals` — `evals/{coco,voc}.py` + `train.py` / `eval.py` / `infer.py` Hydra 진입점.
+8. model-sanity / loss-sanity GPU 50-step.
+9. **P0** `coco-repro-baseline` — 학습 (61 epoch, ~며칠). COCO val AP 46.2 ± 0.5 매칭 (I-04).
+10. **P0 VOC** `voc-repro-baseline` — VOC07 test mAP@0.5 자체 baseline.
+11. 미달 시 3-seed × 향상 요소 ablation (runs/report 정리).
+12. **P0a 메커니즘 진단 5행** — `coco-diag-signal-scale / box-renewal / iter-step / num-boxes / nms-iou`.
+13. P0a 5행 OK → P1 `coco-fm1-sampler-cfm`.
 
 ---
 
 ## 최근 변경 (최근 5개, 시간 역순)
-- **2026-05-21** — **ISSUE/PENSIEVE docs/ 이동 + M0/M1 마일스톤 도입**: `ISSUE.md` → `docs/ISSUE.md` / `pensieve.md` → `docs/PENSIEVE.md` (대문자 + docs/ 일관성). CLAUDE.md 에 "## 마일스톤" 섹션 신설 + M0 (부트스트래핑/docs/컨테이너) + M1 (Pre-P0 데이터 sanity + 인프라). EXPERIMENTS.md 의 단계적 FM 전환 로드맵 표에 `Pre-P0 데이터 sanity` 행 추가. 모든 docs/phases 의 ISSUE/PENSIEVE 참조 surgical 갱신.
-- **2026-05-21** — **datasets/coco/ 모듈 정리**: 루트의 `data_{download,sanity,visualize,report}.py` 4개 → `datasets/coco/{download,sanity,visualize,report}.py` 로 이동 (ARCHITECTURE.md 의 datasets/ 정책 일치). 호출 방식 `python -m datasets.coco.<name>`. ARCHITECTURE.md datasets/ 트리 갱신 + DATA_CARD/phases step.md 4개의 참조 surgical 갱신. VOC 도 동일 패턴 (`datasets/voc/`) 으로 도입 예정.
-- **2026-05-21** — **인프라 정리**: `pyproject.toml` 신설 (R-05 resolved) + `.gitignore` ai-ml 보강 (R-06 resolved — `data/runs/wandb/outputs/.hydra/*.pt/.pth/.ckpt/.safetensors/__pycache__/...`) + `env_docker/Dockerfile` 에 `jq unzip` apt 추가 (I-05 blocked-rebuild — `make build` 또는 `docker exec -u root ...` 필요). CP-1 approved → `data-sanity-coco` phase completed.
-- **2026-05-21** — **`data-sanity-coco` phase 첫 실행**: `data_download.py`/`data_sanity.py`/`data_visualize.py`/`data_report.py` 신설 + COCO val 5000장 + annotations 6 파일 (integrity OK, 1.02GB) 다운 + 분포·박스·해상도 통계 + 4 figure (class_dist / bbox_size / image_size / samples) + report.md 묶음. DATA_CARD 일치 3/3. I-05 (jq 미설치) 신규 등록.
-- **2026-05-21** — **`/docker-init` 완료**: `env_docker/{Dockerfile, docker-compose.yml, docker-entrypoint.sh, .dockerignore}` + `Makefile` + `.env.example` + `requirements.txt` 생성. 베이스 = `pytorch/pytorch:2.5.1-cuda12.1-cudnn9-devel`, GPU runtime, shm 8gb, TB 6007:6006, `~/.claude` 마운트 (인계). I-02 → R-03 resolved.
+- **2026-05-21** — **`code-skeleton-loaders` step 0 status 반영**: `datasets/transforms.py` (`build_transforms` + Compose/RandomResize/RandomHorizontalFlip/ToTensor/Normalize + collate_fn) 는 이전 세션에 작성 완료 + AC PASS 상태였음. phases/code-skeleton-loaders/index.json step 0 status: pending → completed + summary 한 줄 기록. step 1 (coco dataset sanity) / 2 (voc dataset sanity) / 3 (hydra configs) 는 보류.
+- **2026-05-21** — **Dockerfile 2차 patch — PyTorch 2.7.1+cu128 (sm_120 공식 지원)**: 1차 patch (2.6.0+cu124) 가 rebuild 후 `torch.cuda.get_arch_list()` 에 sm_120 미포함으로 no-kernel-image 재현. 웹 검증 결과 **PyTorch sm_120 첫 공식 stable = 2.7.0** (cu128 wheel). `env_docker/Dockerfile` base 를 `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` 로 갱신 + requirements.txt 주석 동기화. ISSUE.md I-06 에 1차/2차 patch 이력 + arch_list 검증 컨벤션 추가. 호스트 driver CUDA 13 forward-compat 확인. 호스트 `make build && make up` 재실행 대기.
+- **2026-05-21** — **models/ + losses/ 구현 + Dockerfile PyTorch 2.6.0 patch (rebuild 대기)**: `models/{backbone,sampler,decoder,diffusiondet}.py` (110.7M params, eval shape `[B,N,C/4]` / train shape `[B,K=6,N,C/4]`) + `models/README.md` mermaid 2개 (전체 구조 + DetectionHead 내부) + 사전학습 가중치 위치 안내 (`/home/docker_user/.cache/torch/hub/checkpoints/resnet50-11ad3fa6.pth` 97.8MB, `torch-cache` named volume 영구화). `losses/{matcher,criterion}.py` (SimOTA dynamic_k + focal/L1/GIoU + deep supervision K=6) + `losses/README.md` mermaid 2개 — CPU sanity loss=38.5 finite, 314/314 trainable params 에 grad. **I-06 신규**: Blackwell sm_120 + PyTorch 2.5.1 미지원 → Dockerfile base patch (`pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel`) + requirements 주석 갱신 — 호스트 `make build && make up && make nvidia-test` 대기. 동일 rebuild 가 I-05 (jq/unzip apt) + torch-cache volume 도 함께 적용.
+- **2026-05-21** — **M2 도달 — 그룹 B 코드 시작**: `data-sanity-coco-train` 완료 (118,287 / 860,001 ann), `data-sanity-voc` 완료 (CP-1 approved). `configs/` Hydra base 7 yaml — DiffusionDet 동치 (lr=2.5e-5 / epochs=61 / batch=16). `datasets/transforms.py` (short 800-1333 + flip 0.5) + `datasets/coco/dataset.py` + `datasets/voc/dataset.py` PyTorch Dataset 구현. 1-batch loading sanity PASS.
+- **2026-05-21** — **ISSUE/PENSIEVE docs/ 이동 + M0/M1 마일스톤 도입**: `ISSUE.md` → `docs/ISSUE.md` / `pensieve.md` → `docs/PENSIEVE.md` (대문자 + docs/ 일관성). CLAUDE.md 에 "## 마일스톤" 섹션 신설 + M0 (부트스트래핑/docs/컨테이너) + M1 (Pre-P0 데이터 sanity + 인프라). EXPERIMENTS.md 의 단계적 FM 전환 로드맵 표에 `Pre-P0 데이터 sanity` 행 추가.
 
 ## 진행 중 phase
 
 | phase tag | 상태 | step 진행 | runs/ |
 |-----------|------|----------|-------|
-| `data-sanity-coco` | **completed** (CP-1 approved) | 0,1,2,3 ✅ | `data-sanity-{download,analyze,vis,report}-20260521-{1332,1335}` |
+| `data-sanity-coco` | completed (CP-1 ✅) | 0,1,2,3 ✅ | `data-sanity-{download,analyze,vis,report}-20260521-{1332,1335}` |
+| `data-sanity-coco-train` | completed (CP-1 auto-approved) | 0,1,2,3 ✅ | `data-sanity-{download-1413, analyze-1509, vis-1510, report-1510}` |
+| `data-sanity-voc` | completed (CP-1 ✅) | 0,1,2,3 ✅ | `data-sanity-voc-{download-1429, analyze-1448, vis-1448, report-1448}` |
+| `code-skeleton-loaders` | step 0 ✅ (1/2/3 pending) | step 0 transforms-common ✅ — datasets/{coco/dataset.py, voc/dataset.py} + configs/data/{coco,voc}.yaml 코드는 있으나 step status 미반영 | — |
+| `model-diffusiondet` | 코드 + README mermaid 완료 / GPU model-sanity rebuild 후 | models/{backbone, sampler, decoder, diffusiondet}.py + models/README.md + utils/box_ops.py + configs/model/diffusiondet.yaml (110.7M params, CPU forward+backward ✅) | — |
+| `loss-diffusiondet` | 코드 + README mermaid 완료 / GPU loss-sanity rebuild 후 | losses/{matcher, criterion}.py + losses/README.md + configs/loss/diffusion.yaml (CPU loss=38.5 finite, 314/314 grad) | — |
+| `entrypoints-evals` | **pending (rebuild 후)** | — | — |
+| `coco-repro-baseline` | pending (P0) | — | — |
+| `voc-repro-baseline` | pending | — | — |
 
 ## 최근 ablation / 진단 결과 (최근 3개)
 없음 — P0/P0a 미시작. EXPERIMENTS.md 의 진단 표 + ablation 표가 채워지기 시작하면 본 섹션에 최근 3개 행 미러링.
@@ -58,7 +70,7 @@
 ---
 
 ## 미해결 결정 / 블로커
-- **I-04 (DiffusionDet 재현치 + P0a 진단 미수행)** 만 open. **I-05 (jq 미설치)** 는 blocked (Dockerfile 갱신 완료, rebuild 대기). 상세는 [ISSUE.md](./ISSUE.md).
+- **I-04 (DiffusionDet 재현치 + P0a 진단 미수행)** 만 open. **I-05 (jq 미설치)** blocked. **I-06 (PyTorch sm_120 미지원 — Blackwell)** 신규 blocked — `pip install --pre torch ... cu126` 또는 Dockerfile rebuild 필요. 상세는 [ISSUE.md](./ISSUE.md).
 - ~~I-01 (pyproject.toml)~~ → **R-05 resolved**. ~~I-03 (.gitignore ai-ml)~~ → **R-06 resolved**.
 - ~~I-02 (env_docker/ 미생성)~~ → **R-03 resolved** (`/docker-init` 으로 해소).
 - I-04 의 두 부분: (a) DiffusionDet 재현치 매칭(P0), (b) **메커니즘 진단 5행 채우기(P0a)**. 둘 다 통과해야 P1 FM 전환 시작.
