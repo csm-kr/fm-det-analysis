@@ -7,8 +7,8 @@
 ---
 
 ## 마지막 업데이트
-- **일시**: 2026-05-21
-- **갱신자**: Claude (`code-skeleton-loaders` step 1 `coco-dataset-loader` 완료 — `datasets/coco/sanity_loader.py` 신설 + 1-batch sanity PASS: batch_shape=[2,3,800,1248], num_targets=[19,14], cat_idx_range=[0,72]. jq AC 통과.)
+- **일시**: 2026-05-22
+- **갱신자**: Claude (`code-skeleton-loaders` step 1 `coco-dataset-loader` AC 재검증 완료 — sanity_pass=true 재현 + index.json status를 completed로 확정. crash_reason="Unknown" 잔여 필드는 자동 감지 오작동으로 정리.)
 
 ---
 

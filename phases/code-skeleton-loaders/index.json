@@ -41,12 +41,12 @@
       "success_metric": "jq -e '.sanity_pass == true and .batch_shape != null' runs/{run_dir}/sanity.json",
       "checkpoint": null,
       "status": "completed",
-      "summary": "datasets/coco/{dataset.py,sanity_loader.py} — CocoDetection(ann_file, image_dir, transforms) + cat_id(1-90)→cat_idx(0-79) 매핑 + drop_empty(background-only 제외) + build_coco_loader(cfg, split, seed). sanity_loader: OmegaConf 로 configs/data/coco.yaml 로드 + batch_size 오버라이드 + 1-batch 검증. AC PASS: batch_shape=[2,3,800,1248], num_targets_per_image=[19,14], cat_idx_range=[0,72], sanity_pass=true. jq AC 통과.",
+      "summary": "datasets/coco/{dataset.py,sanity_loader.py} — CocoDetection(ann_file, image_dir, transforms) + cat_id(1-90)→cat_idx(0-79) 매핑 + drop_empty(background-only 제외) + build_coco_loader(cfg, split, seed). sanity_loader: OmegaConf 로 configs/data/coco.yaml 로드 + batch_size 오버라이드 + 1-batch 검증. AC PASS: batch_shape=[2,3,800,1248], num_targets_per_image=[19,14], cat_idx_range=[0,72], sanity_pass=true. jq AC 통과 (재검증 2026-05-22).",
       "started_at": "2026-05-22T07:15:15+0900",
-      "completed_at": "2026-05-22T07:19:11+0900",
+      "completed_at": "2026-05-22T07:20:54+0900",
       "run_dirs": [
-        "code-skeleton-loaders-coco-20260521-221644",
-        "code-skeleton-loaders-coco-20260521-221911"
+        "code-skeleton-loaders-coco-20260521-221911",
+        "code-skeleton-loaders-coco-20260521-222054"
       ]
     },
     {
