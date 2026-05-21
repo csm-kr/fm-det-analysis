@@ -1,0 +1,20 @@
+node_modules/
+.next/
+out/
+next-env.d.ts
+tsconfig.tsbuildinfo
+
+# phase execution outputs
+phases/**/phase*-output.json
+phases/**/step*-output.json
+
+# phase 동시 실행 방지용 파일락 (실행 중에만 존재)
+phases/**/.lock
+
+# 로컬 전용 Claude 설정
+.claude/settings.local.json
+
+# 환경변수 (시크릿 포함 가능)
+.env
+.env.*
+!.env.example
