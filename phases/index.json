@@ -1,7 +1,22 @@
 {
   "phases": [
     { "dir": "data-sanity-coco", "status": "completed", "group": "A" },
-    { "dir": "data-sanity-coco-train", "status": "in_progress", "group": "A" },
-    { "dir": "data-sanity-voc", "status": "in_progress", "group": "A" }
-  ]
+    { "dir": "data-sanity-coco-train", "status": "completed", "group": "A" },
+    { "dir": "data-sanity-voc", "status": "completed", "group": "A" },
+    { "dir": "code-skeleton-loaders", "status": "pending", "group": "B" },
+    { "dir": "model-diffusiondet", "status": "pending", "group": "B" },
+    { "dir": "loss-diffusiondet", "status": "pending", "group": "B" },
+    { "dir": "entrypoints-evals", "status": "pending", "group": "B" },
+    { "dir": "coco-repro-baseline", "status": "pending", "group": "C" },
+    { "dir": "voc-repro-baseline", "status": "pending", "group": "C" }
+  ],
+  "experiment_budget": {
+    "datasets": 2,
+    "algorithms": 1,
+    "seeds": 1,
+    "per_run_hours": 24,
+    "total_gpu_hours_estimate": 48,
+    "gpu_hours_threshold": 96,
+    "disk_gb_threshold": 100
+  }
 }

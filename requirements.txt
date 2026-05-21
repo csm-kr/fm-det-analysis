@@ -1,4 +1,4 @@
-# fm-det Python 의존성 — PyTorch / torchvision 은 베이스 이미지에 포함 (pytorch/pytorch:2.5.1-cuda12.1-cudnn9-devel).
+# fm-det Python 의존성 — PyTorch / torchvision 은 베이스 이미지에 포함 (pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel).
 # 본 파일은 베이스 이미지 위에 추가로 필요한 것만.
 
 # ─── Config (CRITICAL — ADR-005) ───
@@ -24,5 +24,6 @@ pytest>=7.0
 # ruff / mypy 는 별도 phase 에서 도입
 
 # ─── Notes ───
-# torch / torchvision: 베이스 이미지에 포함 (2.5.1 + cuda12.1). 여기서 재설치하면 GPU 빌드 깨짐 — 절대 추가 금지.
-# numpy 버전 핀: PyTorch 2.5 가 numpy 2.x 와 호환되지만 일부 라이브러리(pycocotools 등) 가 1.x 만 지원할 수 있음 — 충돌 시 `numpy<2` 로 핀.
+# torch / torchvision: 베이스 이미지에 포함 (2.7.1 + cuda12.8). 여기서 재설치하면 GPU 빌드 깨짐 — 절대 추가 금지.
+# Blackwell (sm_120) 공식 지원은 PyTorch 2.7.0 stable 부터 (cu128 wheel). 2.6.x 와 2.5.x 는 sm_50~90 까지만 (I-06 참조).
+# numpy 버전 핀: PyTorch 2.7 가 numpy 2.x 와 호환되지만 일부 라이브러리(pycocotools 등) 가 1.x 만 지원할 수 있음 — 충돌 시 `numpy<2` 로 핀.

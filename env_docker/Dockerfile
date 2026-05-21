@@ -1,12 +1,19 @@
 # ─────────────────────────────────────────────────
-# Stage 1: base — PyTorch 2.5.1 + CUDA 12.1 + cuDNN 9 (devel)
+# Stage 1: base — PyTorch 2.7.1 + CUDA 12.8 + cuDNN 9 (devel)
+#
+# Blackwell (sm_120 — RTX PRO 6000 등) 지원 필수.
+# PyTorch 2.7.0 stable 부터 sm_120 공식 지원 (cu128 wheel 에 sm_120 binary 포함).
+# 2.6.x / 2.5.x stable wheel 은 sm_50~90 까지만 — Blackwell GPU 에서 "no kernel image" 에러 (I-06).
+# wheel 의 supported sm 사전 확인:
+#   python -c "import torch; print(torch.cuda.get_arch_list())"
+# capability (torch.cuda.get_device_capability) 와 arch_list 의 교집합이 비면 부적합.
 #
 # 재현성 강화 팁: 아래 태그를 digest 로 핀하면 동일 이미지 보장.
-#   docker pull pytorch/pytorch:2.5.1-cuda12.1-cudnn9-devel
-#   docker inspect --format='{{index .RepoDigests 0}}' pytorch/pytorch:2.5.1-cuda12.1-cudnn9-devel
+#   docker pull pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel
+#   docker inspect --format='{{index .RepoDigests 0}}' pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel
 # 결과 → 아래 FROM 라인을 그것으로 교체.
 # ─────────────────────────────────────────────────
-FROM pytorch/pytorch:2.5.1-cuda12.1-cudnn9-devel AS base
+FROM pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel AS base
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \

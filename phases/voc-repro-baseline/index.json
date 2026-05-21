@@ -1,0 +1,28 @@
+{
+  "project": "fm-det",
+  "phase": "voc-repro-baseline",
+  "group": "C",
+  "automation": "auto",
+  "hypothesis": "동일 아키텍처를 VOC 07+12 trainval 로 학습 → VOC2007 test mAP@0.5 baseline 자체 확립 (DiffusionDet 공식 결과 없음 — 본 프로젝트 자체 기준)",
+  "baseline_run_id": null,
+  "eval_spec": {
+    "task": "detection",
+    "metric_primary": "mAP@0.5",
+    "metric_lib": "self (pascal_voc_eval)",
+    "input_format": { "pred": "xyxy_score_class", "gt": "xyxy_class_difficult" },
+    "success_threshold": null
+  },
+  "scope": {
+    "dataset": "PASCAL VOC 07+12",
+    "splits": { "train": "voc-trainval-combined", "eval": "voc07-test" },
+    "rationale": "VOC 자체 baseline. 학습 분할 = VOC07 trainval + VOC12 trainval. 평가 = VOC07 test mAP@0.5."
+  },
+  "steps": [
+    { "step": 0, "name": "train-voc-baseline-s42", "kind": "experiment", "timeout_sec": 86400, "max_retries": 0,
+      "monitors": ["tensorboard:6007", "nvidia-smi:1000"],
+      "heartbeat_timeout_sec": 1800, "auto_retry_on_oom": true,
+      "success_metric": "jq -e '.metric_primary > 0.5' runs/{run_dir}/eval.json",
+      "checkpoint": null, "status": "pending",
+      "resumable": true, "resume_from": "runs/{run_dir}/checkpoints/last.pt" }
+  ]
+}

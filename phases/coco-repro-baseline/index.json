@@ -1,0 +1,31 @@
+{
+  "project": "fm-det",
+  "phase": "coco-repro-baseline",
+  "group": "C",
+  "automation": "auto",
+  "hypothesis": "ResNet50+FPN + 6 DetectionHead + DDIM sampler + focal/L1/GIoU 동치 학습 = COCO val AP 46.2 ± 0.5",
+  "baseline_run_id": null,
+  "eval_spec": {
+    "task": "detection",
+    "metric_primary": "mAP@0.5:0.95",
+    "metric_lib": "pycocotools==2.0.7",
+    "input_format": { "pred": "xyxy_score_class", "gt": "xyxy_class" },
+    "success_threshold": 0.457
+  },
+  "scope": {
+    "dataset": "COCO 2017",
+    "splits": { "train": "train2017", "eval": "val2017" },
+    "rationale": "DiffusionDet 본 repo (AP 46.2) 매칭. ±0.5 = [45.7, 46.7]."
+  },
+  "steps": [
+    { "step": 0, "name": "train-coco-baseline-s42", "kind": "experiment", "timeout_sec": 259200, "max_retries": 0,
+      "monitors": ["tensorboard:6006", "nvidia-smi:1000"],
+      "heartbeat_timeout_sec": 1800, "auto_retry_on_oom": true,
+      "success_metric": "jq -e '.metric_primary >= 0.457 and .metric_primary <= 0.467' runs/{run_dir}/eval.json",
+      "checkpoint": "CP-3", "status": "pending",
+      "resumable": true, "resume_from": "runs/{run_dir}/checkpoints/last.pt" },
+    { "step": 1, "name": "compare-to-baseline", "kind": "compare", "timeout_sec": 600,
+      "success_metric": "test -f runs/coco-repro-baseline-compare/summary.md",
+      "checkpoint": null, "status": "pending" }
+  ]
+}

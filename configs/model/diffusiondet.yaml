@@ -1,0 +1,28 @@
+name: diffusiondet
+num_classes: ${data.num_classes}
+num_proposals: 500
+num_heads: 6
+hidden_dim: 256
+dim_feedforward: 2048
+nhead: 8
+dropout: 0.0
+activation: relu
+
+backbone:
+  name: resnet50
+  fpn_out_channels: 256
+  pretrained: true
+  freeze_at: 2
+
+roi_pooler:
+  output_size: 7
+  sampling_ratio: 2
+  pooler_type: roi_align
+
+sampler:
+  timesteps: 1000
+  beta_schedule: cosine
+  eta: 0.0
+  num_inference_steps: 4
+  signal_scale: 2.0
+  box_renewal: true

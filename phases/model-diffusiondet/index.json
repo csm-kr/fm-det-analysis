@@ -1,0 +1,30 @@
+{
+  "project": "fm-det",
+  "phase": "model-diffusiondet",
+  "group": "B",
+  "automation": "review-each",
+  "hypothesis": null,
+  "eval_spec": { "task": "detection", "metric_primary": "n/a" },
+  "scope": {
+    "modules": ["models/backbone.py", "models/decoder.py", "models/sampler.py", "models/head.py",
+                "models/__init__.py", "models/README.md", "configs/model/diffusiondet.yaml"],
+    "rationale": "DiffusionDet nn.Module 재구현 (detectron2 없이). ResNet50+FPN (torchvision) + 6 DetectionHead + DDIM sampler + box/cls heads. models/README.md 에 mermaid 구조도 + shape 표."
+  },
+  "steps": [
+    { "step": 0, "name": "backbone-resnet50-fpn", "kind": "code", "timeout_sec": 1800,
+      "success_metric": "python3 -c 'from models.backbone import build_backbone; import torch; m=build_backbone(); x=torch.randn(2,3,800,800); out=m(x); assert len(out)==4 and out[0].shape[1]==256'",
+      "checkpoint": null, "status": "pending" },
+    { "step": 1, "name": "sampler-ddim", "kind": "code", "timeout_sec": 1800,
+      "success_metric": "python3 -c 'from models.sampler import DiffusionDetSampler; import torch; s=DiffusionDetSampler(1000); xt = s.q_sample(torch.randn(4,500,4), torch.tensor([500]*4), torch.randn(4,500,4)); assert xt.shape == (4,500,4)'",
+      "checkpoint": null, "status": "pending" },
+    { "step": 2, "name": "decoder-6heads", "kind": "code", "timeout_sec": 1800,
+      "success_metric": "test -f models/decoder.py && python3 -c 'from models.decoder import Decoder; print(Decoder.__name__)'",
+      "checkpoint": null, "status": "pending" },
+    { "step": 3, "name": "model-sanity-overfit", "kind": "model-sanity", "timeout_sec": 3600,
+      "success_metric": "jq -e '.forward_shape_ok == true and .all_params_have_grad == true and .param_count_m < 150 and .overfit_one_batch_loss < 1.0' runs/{run_dir}/sanity.json",
+      "checkpoint": "CP-2", "status": "pending" },
+    { "step": 4, "name": "readme-mermaid", "kind": "code", "timeout_sec": 600,
+      "success_metric": "test -f models/README.md && grep -q '```mermaid' models/README.md && grep -q 'flowchart' models/README.md",
+      "checkpoint": null, "status": "pending" }
+  ]
+}

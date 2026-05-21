@@ -24,6 +24,28 @@
 
 ## 진행 중 (open / blocked)
 
+### I-06: PyTorch 가 RTX PRO 6000 Blackwell (sm_120) 미지원 — GPU 학습 차단
+- **상태**: blocked (Dockerfile 2차 patch 완료 2026-05-21 — base = `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel`. 호스트에서 `make build && make up && make nvidia-test` 재실행 대기)
+- **발견일**: 2026-05-21
+- **카테고리**: training
+- **증상**: `model.cuda()` 후 forward 시 `CUDA error: no kernel image is available for execution on the device`. `torch.cuda.get_device_capability(0) == (12, 0)` (Blackwell). PyTorch 2.5.1 / 2.6.0 stable wheel 의 `torch.cuda.get_arch_list()` 는 `sm_50~sm_90` 뿐.
+- **원인**: PyTorch 의 **sm_120 공식 지원 첫 stable 은 2.7.0** (cu128 wheel). 그 이전 (2.5.x / 2.6.x) stable 은 sm_50~90 binary 만 포함 — Dockerfile 주석의 "2.6 부터 지원" 은 사실과 달랐음.
+- **해결책 / 우회**:
+  - **1차 patch (실패, 2026-05-21)**: base = `pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel`. rebuild 후 검증 시 `torch.cuda.get_arch_list()` 에 sm_120 없음 → no kernel image 재현.
+  - **2차 patch (선택된 영구화, 2026-05-21)**: base = `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` (PyTorch 2.7.0 stable 이 sm_120 첫 공식 지원, 2.7.1 은 patch level). requirements.txt 주석 동기화. 호스트에서:
+    ```bash
+    cd <repo>
+    make build && make up && make nvidia-test
+    # 검증:
+    docker compose -f env_docker/docker-compose.yml exec dev python3 -c \
+      "import torch; print(torch.__version__, torch.cuda.get_arch_list(), torch.cuda.get_device_name(0))"
+    # 기대 → '2.7.1+cu128', [..., 'sm_120'] 포함, 'NVIDIA RTX PRO 6000 ...'
+    ```
+    호스트 NVIDIA driver 는 CUDA 13.0 까지 forward-compat — cu128 runtime 과 충돌 없음.
+  - (대안, 미선택) nightly: `pip install --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128`. reproducibility 약함.
+  - 임시 우회 (학습 미실행 시): CPU sanity 만 — CPU 로 forward+backward 모든 314 trainable param gradient 통과 확인됨.
+- **재발 방지**: 새 GPU 도입 시 두 가지를 **함께** 확인 — (a) `torch.cuda.get_device_capability()` (GPU 의 sm 번호), (b) `torch.cuda.get_arch_list()` (wheel 이 빌드된 sm 목록). 둘의 교집합이 비면 부적합. PyTorch release note 의 "supported architectures" 절을 base 이미지 선정 전 확인 (1차 patch 의 실패는 "버전 ≥ X 면 지원" 으로 추정한 데서 나옴 — 실제 wheel 의 arch_list 를 검증해야 함). Dockerfile 의 base 섹션 주석에 sm_120 공식 지원 = 2.7.0 stable 첫 release 라인 박음.
+
 ### I-05: `jq` 미설치 — execute.py 의 `success_metric` 자동 검증 skip
 - **상태**: blocked (Dockerfile 갱신 완료, 컨테이너 rebuild 대기)
 - **발견일**: 2026-05-21

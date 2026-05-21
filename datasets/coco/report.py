@@ -123,9 +123,9 @@ def compose(download_run: Path, analyze_run: Path, vis_run: Path,
 
 {chr(10).join(download_table_rows)}
 
-- val 이미지 수: **{manifest['val_images']}**
+- 이미지 수 ({manifest.get('split', 'val')}): **{manifest.get('image_count', manifest.get('val_images', manifest.get('train_images', '?')))}**
 - annotations 파일 수: **{manifest['ann_files']}**
-- instances_val2017.json 존재: **{manifest['instances_val2017_exists']}**
+- 타깃 annotation 존재: **{manifest.get('target_annotation_exists', manifest.get('instances_val2017_exists', '?'))}** (`{manifest.get('target_annotation', 'instances_val2017.json')}`)
 - integrity_ok: **{manifest['integrity_ok']}**
 
 ## 분포 통계

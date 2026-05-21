@@ -1,0 +1,28 @@
+{
+  "project": "fm-det",
+  "phase": "entrypoints-evals",
+  "group": "B",
+  "automation": "review-each",
+  "hypothesis": null,
+  "eval_spec": { "task": "detection", "metric_primary": "mAP@0.5:0.95" },
+  "scope": {
+    "modules": ["evals/coco.py", "evals/voc.py", "train.py", "eval.py", "infer.py",
+                "configs/train/baseline.yaml", "configs/model/diffusiondet.yaml",
+                "configs/loss/diffusion.yaml", "configs/experiment/coco-repro-baseline.yaml"],
+    "rationale": "evals/{coco,voc}.py (pycocotools COCOeval + VOC mAP@0.5). train/eval/infer.py — @hydra.main, AdamW 2.5e-5, MultiStepLR(47,57), AMP, DDP 옵션, --resume."
+  },
+  "steps": [
+    { "step": 0, "name": "evals-coco", "kind": "code", "timeout_sec": 1800,
+      "success_metric": "python3 -c 'from evals.coco import coco_eval; print(coco_eval.__name__)'",
+      "checkpoint": null, "status": "pending" },
+    { "step": 1, "name": "evals-voc", "kind": "code", "timeout_sec": 1800,
+      "success_metric": "python3 -c 'from evals.voc import voc_eval; print(voc_eval.__name__)'",
+      "checkpoint": null, "status": "pending" },
+    { "step": 2, "name": "entrypoints-train-eval-infer", "kind": "code", "timeout_sec": 1800,
+      "success_metric": "test -f train.py && test -f eval.py && test -f infer.py && python3 -c 'import train, eval, infer'",
+      "checkpoint": null, "status": "pending" },
+    { "step": 3, "name": "dry-run-1iter", "kind": "code", "timeout_sec": 1800,
+      "success_metric": "test -f runs/dry-run-{ts}/metrics.csv",
+      "checkpoint": null, "status": "pending" }
+  ]
+}

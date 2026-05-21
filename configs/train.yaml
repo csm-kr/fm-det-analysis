@@ -1,0 +1,16 @@
+defaults:
+  - data: coco
+  - model: diffusiondet
+  - loss: diffusion
+  - train: baseline
+  - _self_
+
+seed: ???
+device: cuda
+tag: baseline
+output_dir: runs/${now:%Y%m%d-%H%M}-${tag}
+
+hydra:
+  run:
+    dir: ${output_dir}
+  output_subdir: .hydra
