@@ -8,19 +8,19 @@
 
 ## 마지막 업데이트
 - **일시**: 2026-05-22
-- **갱신자**: Claude (`code-skeleton-loaders` step 2 `voc-dataset-loader` 재검증 완료 — index.json 의 stale `crash_reason: Unknown` 정리 + completed 처리. AC 재실행: voc07-trainval batch-size 2 seed 42 → sanity_pass=true, batch_shape=[2,3,800,1088], jq AC 통과.)
+- **갱신자**: Claude (`code-skeleton-loaders` step 3 `hydra-configs` 완료 — configs/{train,eval}.yaml + configs/data/{coco,voc}.yaml 기존 작성분으로 AC 검증. batch_size=16 한 자리(재현성), `hydra.compose(train, data=coco|voc)` 로 defaults 합성 OK. `code-skeleton-loaders` phase 4 step 전부 완료.)
 
 ---
 
 ## 지금 어디 (현재 단계)
 - **전체 단계**: 그룹 B 의 datasets / models / losses 코드 작성 완료 + CPU sanity 통과. **I-06 (Blackwell sm_120 PyTorch 호환) 블로커** — Dockerfile patch 완료, 호스트 rebuild 대기. rebuild 후 evals/ → train.py/eval.py/infer.py → P0 학습 흐름.
-- **활성 phase**: `code-skeleton-loaders` (step 0/1/2 ✅ — step 3 hydra-configs 남음) / `model-diffusiondet` (코드 + README mermaid 완료, model-sanity GPU 50-step 은 rebuild 후) / `loss-diffusiondet` (코드 + README mermaid 완료, loss-sanity GPU 50-step rebuild 후).
-- **활성 작업**: 호스트에서 컨테이너 rebuild 대기.
+- **활성 phase**: `code-skeleton-loaders` 4 step 전부 완료 ✅ / `model-diffusiondet` (코드 + README mermaid 완료, model-sanity GPU 50-step 은 rebuild 후) / `loss-diffusiondet` (코드 + README mermaid 완료, loss-sanity GPU 50-step rebuild 후).
+- **활성 작업**: 호스트에서 컨테이너 rebuild 대기 → 이후 `entrypoints-evals` phase.
 
 ## 다음 한 가지 (Single Next Action)
 > 막연한 "이것저것" 대신 **다음에 손댈 한 가지**를 적는다. 끝나면 다음 한 가지로 갱신.
 
-**`code-skeleton-loaders` step 3 `hydra-configs` 진행 — configs/data/{coco,voc}.yaml OmegaConf 로드 검증 (success_metric: `test -f configs/data/coco.yaml && test -f configs/data/voc.yaml && python3 -c 'from omegaconf import OmegaConf; OmegaConf.load("configs/data/coco.yaml")'`). 병행: 호스트 `make build && make up && make nvidia-test` 로 I-06 해소 (Dockerfile base `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` 2차 patch 적용 후 sm_120 검증) — GPU 학습/평가 흐름 unblocked.**
+**호스트에서 `make build && make up && make nvidia-test` 실행 — Dockerfile base `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` 2차 patch 후 `torch.cuda.get_arch_list()` 에 sm_120 포함 확인 (I-05 / I-06 동시 해소). 그 다음 `entrypoints-evals` phase 설계 — `evals/{coco,voc}.py` + `train.py` / `eval.py` / `infer.py` Hydra 진입점.**
 
 이후 순서 (참고만):
 1. ~~M0 부트스트래핑~~ ✅
@@ -40,11 +40,11 @@
 ---
 
 ## 최근 변경 (최근 5개, 시간 역순)
+- **2026-05-22** — **`code-skeleton-loaders` step 3 `hydra-configs` 완료**: configs/{train,eval}.yaml + configs/data/{coco,voc}.yaml + configs/model/diffusiondet.yaml + configs/loss/diffusion.yaml + configs/train/baseline.yaml 기존 작성분 그대로 AC 검증 통과. coco.yaml: batch_size=16, num_workers=8, short_sides=[480..800]/max_size=1333/flip 0.5; voc.yaml: 동일 transforms + train_split=voc-trainval-combined. `hydra.compose(train, [seed=42])` → data=coco / batch=16 / model=diffusiondet / loss=diffusion_set_loss 합성 OK. data=voc override → num_classes=20. batch_size 는 configs/data/{coco,voc}.yaml 한 곳에서만 결정 (재현성 자리). `code-skeleton-loaders` phase 4 step 전부 종료.
 - **2026-05-22** — **`code-skeleton-loaders` step 2 `voc-dataset-loader` 재검증 + index.json 정리**: 이전 시도에 stale `crash_reason: Unknown` 마커로 status=pending 남아 있었으나 코드는 기존 작성분 그대로 동작. AC 재실행: voc07-trainval batch-size=2 seed=42 → sanity_pass=true, batch_shape=[2,3,800,1088], num_targets_per_image=[1,1], cat_idx_range=[3,18]. jq AC 통과. index.json crash 마커 제거 + status=completed + summary 갱신.
 - **2026-05-22** — **`code-skeleton-loaders` step 2 `voc-dataset-loader` 완료**: `datasets/voc/sanity_loader.py` 신설 — OmegaConf 로 configs/data/voc.yaml 로드 + named split (voc07-trainval/voc07-test/voc12-trainval/voc-trainval-combined) → cfg.train_split / eval_split 오버라이드 후 build_voc_loader 호출. trainval 계열은 train 모드 (drop_difficult=True). AC PASS: batch_shape=[2,3,800,1088], num_targets_per_image=[1,1], cat_idx_range=[3,18], split=voc07-trainval, sanity_pass=true. jq AC 통과.
 - **2026-05-21** — **`code-skeleton-loaders` step 1 `coco-dataset-loader` 완료**: `datasets/coco/sanity_loader.py` 신설 — OmegaConf 로 configs/data/coco.yaml 로드 + batch_size override + `build_coco_loader(split='eval')` 1-batch 검증. sanity.json 산출 (batch_shape=[2,3,800,1248], num_targets_per_image=[19,14], cat_idx_range=[0,72], sanity_pass=true). jq AC 통과. step 0 시각으로 status 반영.
 - **2026-05-21** — **`code-skeleton-loaders` step 0 status 반영**: `datasets/transforms.py` (`build_transforms` + Compose/RandomResize/RandomHorizontalFlip/ToTensor/Normalize + collate_fn) 는 이전 세션에 작성 완료 + AC PASS 상태였음. phases/code-skeleton-loaders/index.json step 0 status: pending → completed + summary 한 줄 기록.
-- **2026-05-21** — **Dockerfile 2차 patch — PyTorch 2.7.1+cu128 (sm_120 공식 지원)**: 1차 patch (2.6.0+cu124) 가 rebuild 후 `torch.cuda.get_arch_list()` 에 sm_120 미포함으로 no-kernel-image 재현. 웹 검증 결과 **PyTorch sm_120 첫 공식 stable = 2.7.0** (cu128 wheel). `env_docker/Dockerfile` base 를 `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` 로 갱신 + requirements.txt 주석 동기화. ISSUE.md I-06 에 1차/2차 patch 이력 + arch_list 검증 컨벤션 추가. 호스트 driver CUDA 13 forward-compat 확인. 호스트 `make build && make up` 재실행 대기.
 
 ## 진행 중 phase
 
@@ -53,7 +53,7 @@
 | `data-sanity-coco` | completed (CP-1 ✅) | 0,1,2,3 ✅ | `data-sanity-{download,analyze,vis,report}-20260521-{1332,1335}` |
 | `data-sanity-coco-train` | completed (CP-1 auto-approved) | 0,1,2,3 ✅ | `data-sanity-{download-1413, analyze-1509, vis-1510, report-1510}` |
 | `data-sanity-voc` | completed (CP-1 ✅) | 0,1,2,3 ✅ | `data-sanity-voc-{download-1429, analyze-1448, vis-1448, report-1448}` |
-| `code-skeleton-loaders` | step 0/1/2 ✅ (step 3 pending) | transforms-common ✅ / coco-dataset-loader ✅ / voc-dataset-loader ✅ — hydra-configs 남음 | `code-skeleton-loaders-coco-20260521-{222054,222242}`, `code-skeleton-loaders-voc-20260521-222615` |
+| `code-skeleton-loaders` | completed (0,1,2,3 ✅) | transforms-common ✅ / coco-dataset-loader ✅ / voc-dataset-loader ✅ / hydra-configs ✅ | `code-skeleton-loaders-coco-20260521-{222054,222242}`, `code-skeleton-loaders-voc-20260521-222615` |
 | `model-diffusiondet` | 코드 + README mermaid 완료 / GPU model-sanity rebuild 후 | models/{backbone, sampler, decoder, diffusiondet}.py + models/README.md + utils/box_ops.py + configs/model/diffusiondet.yaml (110.7M params, CPU forward+backward ✅) | — |
 | `loss-diffusiondet` | 코드 + README mermaid 완료 / GPU loss-sanity rebuild 후 | losses/{matcher, criterion}.py + losses/README.md + configs/loss/diffusion.yaml (CPU loss=38.5 finite, 314/314 grad) | — |
 | `entrypoints-evals` | **pending (rebuild 후)** | — | — |
