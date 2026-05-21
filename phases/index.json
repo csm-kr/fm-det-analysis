@@ -17,8 +17,9 @@
     },
     {
       "dir": "code-skeleton-loaders",
-      "status": "pending",
-      "group": "B"
+      "status": "completed",
+      "group": "B",
+      "completed_at": "2026-05-22T07:37:07+0900"
     },
     {
       "dir": "model-diffusiondet",
