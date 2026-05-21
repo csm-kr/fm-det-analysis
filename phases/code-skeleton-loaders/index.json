@@ -40,7 +40,10 @@
       "max_retries": 3,
       "success_metric": "jq -e '.sanity_pass == true and .batch_shape != null' runs/{run_dir}/sanity.json",
       "checkpoint": null,
-      "status": "pending"
+      "status": "completed",
+      "summary": "datasets/coco/sanity_loader.py — OmegaConf 로 configs/data/coco.yaml 로드 + batch_size 오버라이드 + build_coco_loader(split='eval') 로 1-batch 검증. AC PASS: batch_shape=[2,3,800,1248], num_targets_per_image=[19,14], cat_idx_range=[0,72], sanity_pass=true. jq AC 통과 (runs/code-skeleton-loaders-coco-20260521-221644/sanity.json).",
+      "started_at": "2026-05-22T07:15:15+0900",
+      "completed_at": "2026-05-21T22:16:44+0900"
     },
     {
       "step": 2,
