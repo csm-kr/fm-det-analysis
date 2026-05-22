@@ -24,39 +24,31 @@
 
 ## 진행 중 (open / blocked)
 
-### I-06: PyTorch 가 RTX PRO 6000 Blackwell (sm_120) 미지원 — GPU 학습 차단
-- **상태**: blocked (Dockerfile 2차 patch 완료 2026-05-21 — base = `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel`. 호스트에서 `make build && make up && make nvidia-test` 재실행 대기)
-- **발견일**: 2026-05-21
-- **카테고리**: training
-- **증상**: `model.cuda()` 후 forward 시 `CUDA error: no kernel image is available for execution on the device`. `torch.cuda.get_device_capability(0) == (12, 0)` (Blackwell). PyTorch 2.5.1 / 2.6.0 stable wheel 의 `torch.cuda.get_arch_list()` 는 `sm_50~sm_90` 뿐.
-- **원인**: PyTorch 의 **sm_120 공식 지원 첫 stable 은 2.7.0** (cu128 wheel). 그 이전 (2.5.x / 2.6.x) stable 은 sm_50~90 binary 만 포함 — Dockerfile 주석의 "2.6 부터 지원" 은 사실과 달랐음.
-- **해결책 / 우회**:
-  - **1차 patch (실패, 2026-05-21)**: base = `pytorch/pytorch:2.6.0-cuda12.4-cudnn9-devel`. rebuild 후 검증 시 `torch.cuda.get_arch_list()` 에 sm_120 없음 → no kernel image 재현.
-  - **2차 patch (선택된 영구화, 2026-05-21)**: base = `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` (PyTorch 2.7.0 stable 이 sm_120 첫 공식 지원, 2.7.1 은 patch level). requirements.txt 주석 동기화. 호스트에서:
-    ```bash
-    cd <repo>
-    make build && make up && make nvidia-test
-    # 검증:
-    docker compose -f env_docker/docker-compose.yml exec dev python3 -c \
-      "import torch; print(torch.__version__, torch.cuda.get_arch_list(), torch.cuda.get_device_name(0))"
-    # 기대 → '2.7.1+cu128', [..., 'sm_120'] 포함, 'NVIDIA RTX PRO 6000 ...'
-    ```
-    호스트 NVIDIA driver 는 CUDA 13.0 까지 forward-compat — cu128 runtime 과 충돌 없음.
-  - (대안, 미선택) nightly: `pip install --pre torch torchvision --index-url https://download.pytorch.org/whl/nightly/cu128`. reproducibility 약함.
-  - 임시 우회 (학습 미실행 시): CPU sanity 만 — CPU 로 forward+backward 모든 314 trainable param gradient 통과 확인됨.
-- **재발 방지**: 새 GPU 도입 시 두 가지를 **함께** 확인 — (a) `torch.cuda.get_device_capability()` (GPU 의 sm 번호), (b) `torch.cuda.get_arch_list()` (wheel 이 빌드된 sm 목록). 둘의 교집합이 비면 부적합. PyTorch release note 의 "supported architectures" 절을 base 이미지 선정 전 확인 (1차 patch 의 실패는 "버전 ≥ X 면 지원" 으로 추정한 데서 나옴 — 실제 wheel 의 arch_list 를 검증해야 함). Dockerfile 의 base 섹션 주석에 sm_120 공식 지원 = 2.7.0 stable 첫 release 라인 박음.
-
-### I-05: `jq` 미설치 — execute.py 의 `success_metric` 자동 검증 skip
-- **상태**: blocked (Dockerfile 갱신 완료, 컨테이너 rebuild 대기)
-- **발견일**: 2026-05-21
+### I-08: execute.py 의 `_verify_success_metric` 가 `{run_dir}` 없는 code-only success_metric 을 강제 error 처리
+- **상태**: resolved (2026-05-22 — code patch 적용)
+- **발견일**: 2026-05-22
 - **카테고리**: tooling
-- **증상**: dev 컨테이너에 `jq` 가 없어 (`which jq` → not found) execute.py 의 `_verify_success_metric` 이 모든 jq 표현 검증을 skip. data-sanity-coco phase 의 step0/1 success_metric 도 jq 가 없어 직접 python 으로 검증함.
-- **원인**: `env_docker/Dockerfile` 의 apt 패키지 목록에 `jq` 빠짐. harness 문서(`/.claude/skills/harness.md` §5-3)는 "jq 가 설치돼 있어야 한다" 명시인데 첫 빌드 시 누락.
+- **증상**: `kind: code` step (success_metric = `test -f X.py && python3 -c '...'` 류) 실행 시 Claude subprocess 가 정상 종료 + status=completed 마킹했어도, `_verify_success_metric` 이 `run_dirs` 가 비어 있다는 이유로 `False` 반환 → status 가 강제 error 로 전환. code-skeleton-loaders step 0 (transforms-common) 가 4회 재시도 모두 같은 사유로 실패.
+- **원인**: `scripts/execute.py:290` 의 `if not run_dirs: return False, "..."` 가 success_metric 표현식에 `{run_dir}` 변수가 있든 없든 무조건 run_dirs 를 요구. 그러나 code-only step 의 success_metric 은 `test -f` / `python3 -c '...'` 처럼 파일 시스템·import 만 검사하고 `runs/{run_dir}/...` 산출물을 만들지 않음.
+- **해결책 / 우회**: `_verify_success_metric` 를 *`{run_dir}` 가 expr 에 있을 때만* run_dirs 필수로 만들고, 없으면 expr 을 그대로 shell 실행. 또한 jq 미설치 skip 도 `"jq "` 가 expr 에 있을 때만 적용 (bash-only step 에서는 jq 없어도 OK). patch:
+  ```python
+  needs_run_dir = "{run_dir}" in expr
+  if needs_run_dir and not run_dirs: return False, "..."
+  if "jq " in expr and shutil.which("jq") is None: return True, "skip"
+  cmd = expr.replace("{run_dir}", f"runs/{run_dirs[0]}") if run_dirs else expr
+  ```
+- **재발 방지**: 새 `kind` 추가 시 success_metric 표현이 `{run_dir}` 패턴을 사용하는지 (sanity/experiment/bench) 또는 file-import 패턴 (code) 인지 명확히. harness.md §5-3 의 "`{run_dir}` 변수가 들어가면" 조건문이 코드에 반영돼 있는지 검증. `_verify_success_metric` 수정 시 두 패턴 모두 unit test 권장.
+
+### I-07: torch-cache named volume 영구화 깨짐 + root 소유 — `torchvision pretrained` 다운 실패
+- **상태**: blocked (workaround 적용 가능 / 영구 fix 는 Dockerfile or entrypoint patch + rebuild 필요)
+- **발견일**: 2026-05-22
+- **카테고리**: setup
+- **증상**: rebuild 후 `torchvision.models.resnet50(weights="DEFAULT")` 호출 시 `PermissionError: [Errno 13] Permission denied: '/home/docker_user/.cache/torch/hub'`. `ls -ld /home/docker_user/.cache/torch` → `drwxr-xr-x 2 root root`. docker_user (uid 1000) 가 mount-point 에 쓰기 불가. PENSIEVE 가 약속한 `resnet50-11ad3fa6.pth 97.8MB` 도 사라짐 (volume reset 추정).
+- **원인**: docker-compose.yml 의 named volume `torch-cache:/home/docker_user/.cache/torch` 가 fresh 생성 시 Docker 가 mount-point 를 root 소유로 만듦. 이전에 한 번 chown 후 사용했어도 rebuild + volume reset (또는 `docker compose down -v`) 으로 다시 root 소유로 복귀. Dockerfile 에 `mkdir -p ~/.cache/torch && chown docker_user:docker_user ~/.cache/torch` 같은 pre-create 가 없음.
 - **해결책 / 우회**:
-  - 영구화: `env_docker/Dockerfile` 의 apt-get install 라인에 `jq unzip` 추가 (2026-05-21 패치 완료) → `make build` 로 이미지 rebuild + `make up` 재기동 필요.
-  - 즉시 적용 (호스트에서): `docker exec -u root <container> apt-get update && apt-get install -y jq unzip`.
-  - 컨테이너 안 docker_user 권한으로는 apt/conda 모두 차단 (확인됨) — 위 두 방법 중 하나 필수.
-- **재발 방지**: dev 컨테이너 새 빌드 시 `jq --version` 동작 확인 (entrypoint 헬스체크 한 줄). harness 정본 §5-3 의 "jq 설치 의무" 를 Dockerfile 주석에 미러 완료 (2026-05-21).
+  - **즉시 우회 (이 세션)**: `export TORCH_HOME=/workspace/fm-det/.cache/torch` (workspace bind-mount, docker_user 쓰기 가능). 워크스페이스에 `.cache/torch/hub/checkpoints/` 만들고 가중치 한 번 다운로드. `.gitignore` 에 `.cache/` 추가 권장.
+  - **영구화 (rebuild 필요)**: env_docker/Dockerfile 에 `RUN mkdir -p /home/docker_user/.cache/{torch,huggingface,pip} && chown -R docker_user:docker_user /home/docker_user/.cache` (docker_user 전환 *전*) 추가. 또는 docker-entrypoint.sh 에 `sudo chown` 추가 (sudo 부재 시 root user 전환 후 drop). 또는 hf-cache / pip-cache 도 같은 패턴이므로 함께.
+- **재발 방지**: named volume rebuild 시 mount-point 소유권 확인 — `docker compose -f env_docker/docker-compose.yml exec dev ls -ld /home/docker_user/.cache/{torch,pip,huggingface}` 가 모두 `docker_user docker_user` 이어야 함. Dockerfile 에 pre-create + chown 패턴 박힘으로 첫 빌드부터 보장.
 
 ### I-04: DiffusionDet 본 repo 재현치(AP 46.2) 미검증 + 메커니즘 진단 미수행
 - **상태**: open
@@ -70,6 +62,20 @@
 ---
 
 ## 해결됨 (resolved — 미래의 같은 이슈에 참고)
+
+### R-08: PyTorch sm_120 (Blackwell) 미지원 — 2.7.1+cu128 base 로 해결 (구 I-06)
+- **해결일**: 2026-05-22
+- **카테고리**: training
+- **발생 경위**: 2026-05-21 발견. RTX PRO 6000 Blackwell (sm_120) 에서 forward 시 `CUDA error: no kernel image is available`. PyTorch 2.5.1 / 2.6.0 stable wheel 의 `torch.cuda.get_arch_list()` 에 sm_120 없음.
+- **해결책**: env_docker/Dockerfile base 를 **`pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel`** 로 patch (PyTorch 2.7.0 stable 이 sm_120 첫 공식 지원, 2.7.1 은 patch). 1차 patch (2.6.0+cu124) 가 wheel arch_list 에 sm_120 미포함이라 실패한 후 2차 patch 로 영구화. 2026-05-22 호스트 rebuild 검증: `torch.__version__ == '2.7.1+cu128'`, `arch_list = [..., 'sm_120', 'compute_120']`, `cuda.get_device_name(0) == 'NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition'`, Linear(10,10).cuda() forward PASS.
+- **재발 방지**: 새 GPU 도입 시 (a) `torch.cuda.get_device_capability()` (b) `torch.cuda.get_arch_list()` 둘 다 확인. 교집합 비면 부적합. PyTorch release note 의 "supported architectures" 절을 base 이미지 선정 전 확인 — 버전 ≥ X 만으로 추정 금지 (1차 patch 실패 사유). Dockerfile base 주석에 sm_120 공식 지원 = 2.7.0 stable 첫 release 박힘.
+
+### R-07: `jq` / `unzip` 미설치 — rebuild 로 영구 설치됨 (구 I-05)
+- **해결일**: 2026-05-22
+- **카테고리**: tooling
+- **발생 경위**: 2026-05-21 발견. dev 컨테이너에 `jq` 부재로 execute.py 의 `_verify_success_metric` skip. `unzip` 부재로 voc archive 압축 해제 시 python zipfile 우회 필요.
+- **해결책**: env_docker/Dockerfile 의 apt-get install 라인에 `jq unzip` 추가. 2026-05-22 호스트 rebuild 후 `jq --version → jq-1.6`, `unzip -v → UnZip 6.00` 확인.
+- **재발 방지**: dev 컨테이너 새 빌드 시 entrypoint 헬스체크 한 줄 (`jq --version && unzip -v`) 권장. harness 정본 §5-3 "jq 설치 의무" 가 Dockerfile 주석에 박힘 (R-07 시점에 미러됨).
 
 ### R-06: `.gitignore` 가 ai-ml 정책을 반영하지 않음
 - **해결일**: 2026-05-21

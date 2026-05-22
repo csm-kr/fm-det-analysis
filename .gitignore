@@ -46,3 +46,6 @@ dist/
 .DS_Store
 .vscode/
 .idea/
+
+# torch/hf cache workaround (I-07)
+.cache/

@@ -4,24 +4,65 @@
   "group": "B",
   "automation": "review-each",
   "hypothesis": null,
-  "eval_spec": { "task": "detection", "metric_primary": "n/a" },
+  "eval_spec": {
+    "task": "detection",
+    "metric_primary": "n/a"
+  },
   "scope": {
-    "modules": ["losses/matcher.py", "losses/criterion.py", "losses/__init__.py", "losses/README.md",
-                "configs/loss/diffusion.yaml"],
+    "modules": [
+      "losses/matcher.py",
+      "losses/criterion.py",
+      "losses/__init__.py",
+      "losses/README.md",
+      "configs/loss/diffusion.yaml"
+    ],
     "rationale": "DiffusionDet 동치 loss: SimOTA dynamic_k matcher + focal (α=0.25,γ=2.0) + L1 (×5) + GIoU (×2). 6 head 계층 모두 supervision. losses/README.md 에 gt/pred → loss flow mermaid."
   },
   "steps": [
-    { "step": 0, "name": "matcher-simota", "kind": "code", "timeout_sec": 1800,
+    {
+      "step": 0,
+      "name": "matcher-simota",
+      "kind": "code",
+      "timeout_sec": 1800,
       "success_metric": "python3 -c 'from losses.matcher import SimOTAMatcher; print(SimOTAMatcher.__name__)'",
-      "checkpoint": null, "status": "pending" },
-    { "step": 1, "name": "criterion", "kind": "code", "timeout_sec": 1800,
+      "checkpoint": null,
+      "status": "completed",
+      "started_at": "2026-05-23T08:30:35+0900",
+      "completed_at": "2026-05-23T08:30:35+0900",
+      "summary": "losses/matcher.py — SimOTAMatcher (dynamic_k matching, center prior, focal cost). DiffusionDet 본 repo 와 동치."
+    },
+    {
+      "step": 1,
+      "name": "criterion",
+      "kind": "code",
+      "timeout_sec": 1800,
       "success_metric": "python3 -c 'from losses.criterion import SetCriterion; print(SetCriterion.__name__)'",
-      "checkpoint": null, "status": "pending" },
-    { "step": 2, "name": "loss-sanity-50step", "kind": "loss-sanity", "timeout_sec": 1800,
+      "checkpoint": null,
+      "status": "completed",
+      "started_at": "2026-05-23T08:30:35+0900",
+      "completed_at": "2026-05-23T08:30:35+0900",
+      "summary": "losses/criterion.py — SetCriterion (focal α=0.25 γ=2.0 + L1×5 + GIoU×2, deep supervision K=6). CPU sanity: loss=38.5 finite, 314/314 trainable param 에 grad."
+    },
+    {
+      "step": 2,
+      "name": "loss-sanity-50step",
+      "kind": "loss-sanity",
+      "timeout_sec": 1800,
       "success_metric": "jq -e '.nan_inf_count == 0 and .grad_norm_max < 100 and .loss_decreases == true' runs/{run_dir}/sanity.json",
-      "checkpoint": null, "status": "pending" },
-    { "step": 3, "name": "readme-mermaid", "kind": "code", "timeout_sec": 600,
+      "checkpoint": null,
+      "status": "pending"
+    },
+    {
+      "step": 3,
+      "name": "readme-mermaid",
+      "kind": "code",
+      "timeout_sec": 600,
       "success_metric": "test -f losses/README.md && grep -q '```mermaid' losses/README.md",
-      "checkpoint": null, "status": "pending" }
+      "checkpoint": null,
+      "status": "completed",
+      "started_at": "2026-05-23T08:30:35+0900",
+      "completed_at": "2026-05-23T08:30:35+0900",
+      "summary": "losses/README.md — mermaid 2개 (gt/pred → matcher → loss flow + deep supervision K=6 흐름)."
+    }
   ]
 }
