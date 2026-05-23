@@ -460,9 +460,11 @@ DetectionHead 가 **두 종류의 정보** 를 동시에 굴림:
 1. **ROI feature** — image 의 해당 box 영역 (시각 정보, 7×7 grid)
 2. **proposal feature (obj_feat)** — box 의 "추상 표현" (256-vec, 학습되는 의미)
 
-이 둘이 SA / DynamicConv / FiLM / FFN 거치면서 서로 영향. 마지막에 proposal feature 에서 cls + reg 출력.
+이 둘이 SA → DynamicConv → FiLM → FFN 거치면서 서로 영향. 마지막에 proposal feature 에서 cls + reg 출력.
 
-> **참고**: DiffusionDet 의 attention 은 **Self-Attention 만** 있음 (proposal 끼리). "Cross-Attention" 의 역할은 **DynamicConv 가 대신** — proposal feature 가 ROI feature 와 상호작용. 일반 Transformer (DETR 등) 와 다른 디자인.
+핵심 두 모듈:
+- **Self-Attention** — proposal 끼리 (N=500 끼리 관계 학습)
+- **DynamicConv** — proposal 이 자기 ROI 와 결합. proposal feature 가 instance-specific conv kernel 을 생성해 자기 7×7 ROI 에 적용 → 256-vec 으로 압축.
 
 #### 2.3.1. mermaid (단계 전체)
 
@@ -470,7 +472,7 @@ DetectionHead 가 **두 종류의 정보** 를 동시에 굴림:
 flowchart TD
     subgraph IN [Input — 외부에서 들어옴]
       Bx["bboxes [B, N, 4] xyxy_img<br/>(sampling 또는 prev head)"]
-      Pro0["proposal_features (obj_feat)<br/>[B, N, 256]<br/>(Head 0 = zeros, 이후 prev refined)"]
+      Pro0["proposal_features (obj_feat)<br/>**Head 0: None** (밑에서 roi mean 으로 init)<br/>**Head 1~5: prev new_pro [B, N, 256]**"]
       Feat["features (4 level list)<br/>P2 [B,256,H/4,W/4] ... P5"]
       T["time_emb [B, 1024]<br/>(t → sinusoid → MLP)"]
     end
@@ -480,11 +482,14 @@ flowchart TD
 
     ROI --> Flat["**STEP 1: flatten + permute**<br/>flatten(2): 7×7 → 49<br/>permute(0,2,1)<br/>roi_features [B·N, 49, 256]<br/>(49 spatial tokens × 256 ch)"]
 
-    Pro0 --> Permute["**STEP 2: proposal permute**<br/>[B, N, 256] → [N, B, 256]<br/>(nn.MHA 규약: seq, batch, d)"]
+    Flat --> Init["**STEP 1.5: pro init (Head 0 만)**<br/>if proposal_features is None:<br/>&nbsp;&nbsp;proposal_features = roi_features.mean(dim=1).reshape(B, N, 256)<br/>**49 spatial token 평균 = box 영역의 spatial avg pool**<br/>= zeros 가 아니라 의미 있는 초기 visual feature"]
+
+    Pro0 --> Init
+    Init --> Permute["**STEP 2: proposal permute**<br/>[B, N, 256] → [N, B, 256]<br/>(nn.MHA 규약: seq, batch, d)"]
 
     Permute --> SA["**STEP 3: Self-Attention** (proposals 끼리)<br/>pro2 = MHA(Q=pro, K=pro, V=pro)<br/>pro = pro + dropout(pro2); norm1<br/>같은 batch 의 N=500 proposal 끼리<br/>'다른 box 와의 관계' 학습<br/>[N, B, 256]"]
 
-    SA --> DC["**STEP 4: DynamicConv** (CA 대용 — proposal × ROI)<br/>pro_for_dyn = pro.reshape(1, B·N, 256)<br/>pro2 = inst_interact(pro_for_dyn, roi_features)<br/>  - proposal feature 가 두 개의 1x1 conv kernel 생성 (256→64→256)<br/>  - 그 kernel 로 roi_features [B·N, 49, 256] 을 conv<br/>  - 결과 평균 → [B·N, 256] (7×7 ROI grid → 256-vec 압축)<br/>pro = pro + dropout(pro2); norm2<br/>**이 단계가 ROI 와 proposal 의 만남**<br/>[N, B, 256]"]
+    SA --> DC["**STEP 4: DynamicConv** (proposal × ROI)<br/>pro_for_dyn = pro.reshape(1, B·N, 256)<br/>pro2 = inst_interact(pro_for_dyn, roi_features)<br/>  - proposal feature 가 두 개의 1x1 conv kernel 생성 (256→64→256)<br/>  - 그 kernel 로 roi_features [B·N, 49, 256] 을 conv<br/>  - 결과 평균 → [B·N, 256] (7×7 ROI grid → 256-vec 압축)<br/>pro = pro + dropout(pro2); norm2<br/>**이 단계가 ROI 와 proposal 의 만남**<br/>[N, B, 256]"]
 
     Flat --> DC
 
@@ -514,7 +519,8 @@ flowchart TD
 INPUT (외부에서)
 ========================================================
 bboxes          [B=32, N=500, 4]    xyxy_img      (sampling 또는 prev head refined)
-proposal_feat   [B=32, N=500, 256]  obj_feat      (Head 0 = zeros, 이후 prev refined)
+proposal_feat   None                              (Head 0 — 안에서 roi mean 으로 init)
+                또는 [B=32, N=500, 256]           (Head 1~5 — prev new_pro)
 features        list of 4 tensors   FPN P2~P5     (학습 중 고정)
 time_emb        [B=32, 1024]        sinusoid(t) MLP
 
@@ -531,6 +537,18 @@ roi_features = roi_features.flatten(2).permute(0, 2, 1)
   ─ flatten(2): [16000, 256, 7, 7] → [16000, 256, 49]    7×7 spatial 을 1 차원으로
   ─ permute:    [16000, 256, 49]   → [16000, 49, 256]    Transformer token 처럼 (seq, d)
   → roi_features [16000, 49, 256]                   ← 49 spatial token × 256 ch
+
+========================================================
+STEP 1.5 — proposal_features init (Head 0 만 동작)
+========================================================
+if proposal_features is None:                        ← Head 0 일 때만
+    proposal_features = roi_features.mean(dim=1).reshape(B, N, 256)
+  ─ roi_features [B·N, 49, 256] → .mean(dim=1) → [B·N, 256]
+  ─ 49 spatial token 평균 = 7×7 ROI 의 spatial avg pool
+  ─ = "그 box 영역의 평균적 visual feature"
+  ─ zeros 가 아니라 의미 있는 초기 obj_feat
+  → proposal_features [B, N, 256]
+Head 1~5 는 이 분기 건너뜀 (prev head 의 new_pro 그대로 사용)
 
 ========================================================
 STEP 2 — proposal permute  (nn.MHA 규약)
@@ -550,7 +568,7 @@ pro = norm1(pro)                                     ← LayerNorm
   → pro [500, 32, 256]                              ← same shape, 의미 갱신
 
 ========================================================
-STEP 4 — DynamicConv (CA 의 역할 — proposal × ROI)
+STEP 4 — DynamicConv (proposal × ROI)
 ========================================================
 pro_for_dyn = pro.reshape(1, B·N=16000, 256)         ← 1 seq, BN batch 로 재배치
 pro2 = inst_interact(pro_for_dyn, roi_features)
@@ -573,8 +591,8 @@ pro = pro + dropout(pro2)                            ← residual
 pro = norm2(pro)                                     ← LayerNorm
   → pro [500, 32, 256]                              ← ROI 정보가 proposal 에 흡수
 
-  *핵심*: DiffusionDet 은 CA 없이 DynamicConv 로 ROI ↔ proposal 결합.
-         proposal 이 instance-specific conv kernel 을 생성해 자기 ROI 에 적용.
+  *핵심*: proposal 이 instance-specific conv kernel 을 생성해 자기 ROI 에 적용.
+         → 각 box 마다 다른 filter — 자기 영역에 맞춘 feature 추출.
 
 ========================================================
 STEP 5 — FiLM time modulation
@@ -642,7 +660,7 @@ new_pro         [B, N, 256]    ← 다음 head 의 input obj_feat (refined)
                                                                 │
 sampler ─→ bboxes_0 ┐                                           │
            (init)   │                                           │
-          pro_0=0   │                                           │
+        pro_0=None  │ ← Head 0 안에서 roi_features.mean 으로 init│
                     ▼                                           │
               ┌─────────────────┐                               │
               │   Head 0        │ ◄────── features, time_emb ───┤
