@@ -8,19 +8,19 @@
 
 ## 마지막 업데이트
 - **일시**: 2026-05-23
-- **갱신자**: Claude (그룹 B 완료 — model-sanity / loss-sanity GPU PASS + entrypoints-evals 4/4 step 작성 + dry-run-1iter PASS. `evals/{coco,voc}.py` + `train.py` / `eval.py` / `infer.py` Hydra @main 신설. dry-run: `runs/20260523-0041-dry-run/` (metrics.csv 1 row, loss=34.87, last.pt 443MB). P0 학습 가능 상태 — 다음 한 가지는 **CP-2 검토 + P0 `coco-repro-baseline` 학습 시작**.)
+- **갱신자**: Claude (CP-2 approved + **P0 `coco-repro-baseline` 학습 백그라운드 시작** — PID 1052904, log `phases/coco-repro-baseline/train.log`, run_dir `runs/20260523-0113-coco-repro-baseline`. iter 1 loss=34.87 (dry-run 과 일치, deterministic ✓). 추정 2-5 day (61 epoch × 7392 iter). 모든 그룹 B phase completed.)
 
 ---
 
 ## 지금 어디 (현재 단계)
-- **전체 단계**: 그룹 B 사실상 종료 — code-skeleton-loaders / loss-diffusiondet / entrypoints-evals 완료, model-diffusiondet 만 CP-2 검토 대기 (model-sanity 결과). 그룹 C (P0/P0a) 진입 직전.
-- **활성 phase**: `model-diffusiondet` ⏸ awaiting-review (CP-2) · `loss-diffusiondet` ✅ · `entrypoints-evals` ✅ · `coco-repro-baseline` pending (P0).
-- **활성 작업**: **(a) CP-2 사용자 검토 — model-sanity 결과 (forward_shape_ok, 314/314 grad, 110.67M, loss 51% drop) 가 OK 면 approved 로 변경. (b) P0 `coco-repro-baseline` 학습 시작 — 61 epoch ~며칠.**
+- **전체 단계**: **그룹 C 진입 — P0 `coco-repro-baseline` 학습 진행 중 (PID 1052904, run_dir `runs/20260523-0113-coco-repro-baseline`)**. CP-2 approved (model step 3). 그룹 B phase 모두 completed. 학습 추정 2-5 day.
+- **활성 phase**: `coco-repro-baseline` step 0 진행 중 (학습) · `voc-repro-baseline` pending.
+- **활성 작업**: **P0 학습 모니터링 — `tail -f phases/coco-repro-baseline/train.log` + `nvidia-smi`. 학습 종료 후 `python eval.py +experiment=coco-repro-baseline seed=42 run_dir=runs/20260523-0113-coco-repro-baseline` → AC `0.457 ≤ AP ≤ 0.467` 검증**.
 
 ## 다음 한 가지 (Single Next Action)
 > 막연한 "이것저것" 대신 **다음에 손댈 한 가지**를 적는다. 끝나면 다음 한 가지로 갱신.
 
-**CP-2 검토 → P0 학습 시작**: `phases/model-diffusiondet/index.json` step 3 의 `run_metrics`/`summary` 확인 (forward_shape_ok=true, 314/314 grad, param_count_m=110.67, loss 40.91→19.97 drop 51.18%). OK 면 status `awaiting-review` → `approved`. 그 다음 P0 `coco-repro-baseline` 학습: `TORCH_HOME=/workspace/fm-det/.cache/torch python train.py +experiment=coco-repro-baseline seed=42` — 61 epoch × 118k images / batch 16 ≈ 며칠. 학습 중 `runs/{ts}-coco-repro-baseline/metrics.csv` 모니터링. 끝나면 `python eval.py +experiment=coco-repro-baseline seed=42 run_dir=runs/{ts}-coco-repro-baseline` → AP@0.5:0.95 비교 (46.2 ± 0.5 매칭). 그 사이 VOC P0 도 병행 가능.
+**P0 학습 종료 후 eval + AC 검증**: 학습 끝 (2-5 day 후, 61 epoch 자연 종료) → `TORCH_HOME=/workspace/fm-det/.cache/torch python eval.py +experiment=coco-repro-baseline seed=42 run_dir=runs/20260523-0113-coco-repro-baseline` 호출 → `runs/.../eval-{HHmm}/eval.json` 산출 → `jq -e '.metric_primary >= 0.457 and .metric_primary <= 0.467' ...` 확인. PASS 면 step 0 status pending → completed + CP-3 사용자 검토 (다음 분기: P0a 진단 / P1 FM). 미달 시 step 0 status=error + 원인 분석 (epoch / LR / aug / batch 등) → 3-seed 보강 ablation. 학습 중단 시 `+train.resume=runs/20260523-0113-coco-repro-baseline/checkpoints/last.pt` 로 재개.
 
 이후 순서 (참고만):
 1. ~~M0 부트스트래핑~~ ✅

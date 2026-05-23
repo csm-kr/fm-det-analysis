@@ -65,7 +65,7 @@
       "success_metric": "jq -e '.forward_shape_ok == true and .all_params_have_grad == true and .param_count_m < 150 and .loss_decreased == true' runs/{run_dir}/sanity.json",
       "note_threshold": "DiffusionDet set loss (focal×2 + L1×5 + GIoU×2) absolute 가 커서 `< 1.0` 같은 절대 임계는 비현실 — 학습 동작 신호는 loss_decreased (last < first × 0.8). harness §2-2 의 단일 cls overfit 임계와 다름.",
       "checkpoint": "CP-2",
-      "status": "awaiting-review",
+      "status": "approved",
       "started_at": "2026-05-23T09:33:35+0900",
       "completed_at": "2026-05-23T09:33:35+0900",
       "awaiting_review_at": "2026-05-23T09:33:35+0900",
@@ -97,7 +97,9 @@
           ]
         }
       },
-      "summary": "models/sanity.py: B=2 image 800x800, 무작위 GT 2개/이미지, AdamW(lr=1e-3) 200-step overfit. forward_shape_ok=true [2,6,500,{80,4}], 314/314 trainable param 모두 grad, param_count_m=110.67M (< 150), loss 40.91 → 19.97 (drop 51.18%, loss_decreased=true). RTX PRO 6000 Blackwell sm_120 forward+backward PASS. CP-2 사용자 검토 대기."
+      "summary": "models/sanity.py: B=2 image 800x800, 무작위 GT 2개/이미지, AdamW(lr=1e-3) 200-step overfit. forward_shape_ok=true [2,6,500,{80,4}], 314/314 trainable param 모두 grad, param_count_m=110.67M (< 150), loss 40.91 → 19.97 (drop 51.18%, loss_decreased=true). RTX PRO 6000 Blackwell sm_120 forward+backward PASS. CP-2 사용자 검토 대기.",
+      "approved_at": "2026-05-23T10:11:42+0900",
+      "approval_note": "사용자 'P0 학습 진행해줘' → CP-2 OK. forward_shape PASS / 314/314 grad / 110.67M param / loss 51% drop 모두 검증."
     },
     {
       "step": 4,

@@ -23,6 +23,7 @@ import hydra
 import numpy as np
 import torch
 from omegaconf import DictConfig, OmegaConf
+from torch.utils.tensorboard import SummaryWriter
 
 from datasets.coco.dataset import build_coco_loader
 from datasets.voc.dataset import build_voc_loader
@@ -106,6 +107,7 @@ def main(cfg: DictConfig) -> None:
             "epoch", "iter", "loss_total", "loss_cls", "loss_l1", "loss_giou",
             "grad_norm", "lr", "elapsed_sec",
         ])
+    tb_writer = SummaryWriter(log_dir=str(out_dir / "logs"))
 
     grad_clip = float(cfg.train.grad_clip)
     log_interval = int(cfg.train.log_interval)
@@ -141,19 +143,27 @@ def main(cfg: DictConfig) -> None:
 
             iter_count += 1
             last_loss = float(loss.detach())
+            cur_lr = optim.param_groups[0]["lr"]
+            cls_v = float(loss_dict["loss_cls"])
+            l1_v = float(loss_dict["loss_l1"])
+            giou_v = float(loss_dict["loss_giou"])
+            gnorm = float(grad_norm)
             with open(metrics_path, "a", newline="") as f:
                 csv.writer(f).writerow([
-                    epoch, iter_count, last_loss,
-                    float(loss_dict["loss_cls"]),
-                    float(loss_dict["loss_l1"]),
-                    float(loss_dict["loss_giou"]),
-                    float(grad_norm),
-                    optim.param_groups[0]["lr"],
-                    round(time.monotonic() - t_start, 2),
+                    epoch, iter_count, last_loss, cls_v, l1_v, giou_v,
+                    gnorm, cur_lr, round(time.monotonic() - t_start, 2),
                 ])
+            tb_writer.add_scalar("train/loss_total", last_loss, iter_count)
+            tb_writer.add_scalar("train/loss_cls", cls_v, iter_count)
+            tb_writer.add_scalar("train/loss_l1", l1_v, iter_count)
+            tb_writer.add_scalar("train/loss_giou", giou_v, iter_count)
+            # AMP 첫 step grad_norm NaN 은 skip (TB 가 NaN 처리 못 함)
+            if gnorm == gnorm:
+                tb_writer.add_scalar("train/grad_norm", gnorm, iter_count)
+            tb_writer.add_scalar("train/lr", cur_lr, iter_count)
             if iter_count % log_interval == 0 or iter_count == 1:
                 print(f"[epoch {epoch} iter {iter_count}] loss={last_loss:.4f} "
-                      f"grad_norm={float(grad_norm):.2f} lr={optim.param_groups[0]['lr']:.2e}")
+                      f"grad_norm={gnorm:.2f} lr={cur_lr:.2e}")
             if max_iters > 0 and iter_count >= max_iters:
                 finished = True
                 break
@@ -168,6 +178,7 @@ def main(cfg: DictConfig) -> None:
             "iter": iter_count,
         }, ckpt_dir / "last.pt")
 
+    tb_writer.close()
     print(f"Done. epoch={epoch} iter={iter_count} last_loss={last_loss} runs/{out_dir.name}")
 
 
