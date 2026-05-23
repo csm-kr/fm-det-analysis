@@ -13,7 +13,7 @@ scheduler:
 
 epochs: 61
 grad_clip: 1.0
-amp: true
+amp: false
 
 log_interval: 50
 eval_interval_epoch: 1
