@@ -4,25 +4,85 @@
   "group": "B",
   "automation": "review-each",
   "hypothesis": null,
-  "eval_spec": { "task": "detection", "metric_primary": "mAP@0.5:0.95" },
+  "eval_spec": {
+    "task": "detection",
+    "metric_primary": "mAP@0.5:0.95"
+  },
   "scope": {
-    "modules": ["evals/coco.py", "evals/voc.py", "train.py", "eval.py", "infer.py",
-                "configs/train/baseline.yaml", "configs/model/diffusiondet.yaml",
-                "configs/loss/diffusion.yaml", "configs/experiment/coco-repro-baseline.yaml"],
+    "modules": [
+      "evals/coco.py",
+      "evals/voc.py",
+      "train.py",
+      "eval.py",
+      "infer.py",
+      "configs/train/baseline.yaml",
+      "configs/model/diffusiondet.yaml",
+      "configs/loss/diffusion.yaml",
+      "configs/experiment/coco-repro-baseline.yaml"
+    ],
     "rationale": "evals/{coco,voc}.py (pycocotools COCOeval + VOC mAP@0.5). train/eval/infer.py — @hydra.main, AdamW 2.5e-5, MultiStepLR(47,57), AMP, DDP 옵션, --resume."
   },
   "steps": [
-    { "step": 0, "name": "evals-coco", "kind": "code", "timeout_sec": 1800,
+    {
+      "step": 0,
+      "name": "evals-coco",
+      "kind": "code",
+      "timeout_sec": 1800,
       "success_metric": "python3 -c 'from evals.coco import coco_eval; print(coco_eval.__name__)'",
-      "checkpoint": null, "status": "pending" },
-    { "step": 1, "name": "evals-voc", "kind": "code", "timeout_sec": 1800,
+      "checkpoint": null,
+      "status": "completed",
+      "started_at": "2026-05-23T09:44:23+0900",
+      "completed_at": "2026-05-23T09:44:23+0900",
+      "summary": "evals/coco.py — coco_eval(model, loader, device, score_thresh=0.05, max_dets=100): pred sigmoid → top-K (image×class) → orig px rescale → COCOeval('bbox'). 반환 {metric_primary=mAP@0.5:0.95, AP50, AP75, APs/APm/APl, num_predictions}."
+    },
+    {
+      "step": 1,
+      "name": "evals-voc",
+      "kind": "code",
+      "timeout_sec": 1800,
       "success_metric": "python3 -c 'from evals.voc import voc_eval; print(voc_eval.__name__)'",
-      "checkpoint": null, "status": "pending" },
-    { "step": 2, "name": "entrypoints-train-eval-infer", "kind": "code", "timeout_sec": 1800,
+      "checkpoint": null,
+      "status": "completed",
+      "started_at": "2026-05-23T09:44:23+0900",
+      "completed_at": "2026-05-23T09:44:23+0900",
+      "summary": "evals/voc.py — voc_eval(model, loader, device, num_classes=20, iou_thresh=0.5): per-class cumulative TP/FP → 11-point interpolation mAP@0.5. 반환 {metric_primary=mAP50, per_class_ap, ...}. difficult flag 는 dataset drop_difficult 에 의존."
+    },
+    {
+      "step": 2,
+      "name": "entrypoints-train-eval-infer",
+      "kind": "code",
+      "timeout_sec": 1800,
       "success_metric": "test -f train.py && test -f eval.py && test -f infer.py && python3 -c 'import train, eval, infer'",
-      "checkpoint": null, "status": "pending" },
-    { "step": 3, "name": "dry-run-1iter", "kind": "code", "timeout_sec": 1800,
-      "success_metric": "test -f runs/dry-run-{ts}/metrics.csv",
-      "checkpoint": null, "status": "pending" }
+      "checkpoint": null,
+      "status": "completed",
+      "started_at": "2026-05-23T09:44:23+0900",
+      "completed_at": "2026-05-23T09:44:23+0900",
+      "summary": "train.py / eval.py / infer.py — Hydra @main + seed 강제. train: AdamW(2.5e-5) + MultiStepLR(47,57) + AMP + grad_clip 1.0 + metrics.csv 기록 + ckpt 매 epoch + max_iters 옵션 (dry-run). eval: ckpt 로드 + evals.{coco,voc}_eval → eval.json. infer: 단일 이미지 → predictions.json + drawn.jpg."
+    },
+    {
+      "step": 3,
+      "name": "dry-run-1iter",
+      "kind": "code",
+      "timeout_sec": 1800,
+      "success_metric": "bash -c '[ -n \"$(ls runs/*-dry-run/metrics.csv 2>/dev/null)\" ]'",
+      "checkpoint": null,
+      "status": "completed",
+      "started_at": "2026-05-23T09:44:23+0900",
+      "completed_at": "2026-05-23T09:44:23+0900",
+      "summary": "dry-run-1iter: `python train.py +experiment=coco-repro-baseline seed=42 +train.max_iters=1 tag=dry-run` → runs/20260523-0041-dry-run/ 산출 (metrics.csv 1 row loss=34.87, config.yaml + git_rev.txt + seed.txt + checkpoints/last.pt). 첫 step grad_norm=NaN 은 AMP scaler 의 inf grad 감지 (정상).",
+      "run_dirs": [
+        "20260523-0041-dry-run"
+      ],
+      "run_metrics": {
+        "20260523-0041-dry-run": {
+          "iter": 1,
+          "loss_total": 34.8745,
+          "loss_cls": 12.9957,
+          "loss_l1": 11.6511,
+          "loss_giou": 10.2277,
+          "lr": 2.5e-05
+        }
+      }
+    }
   ]
 }

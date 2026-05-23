@@ -8,30 +8,30 @@
 
 ## 마지막 업데이트
 - **일시**: 2026-05-23
-- **갱신자**: Claude (model-sanity / loss-sanity 둘 다 GPU PASS — `models/sanity.py` + `losses/sanity.py` 신설, runs/{model,loss}-sanity-* 산출. model step 3 → awaiting-review (CP-2, 사용자 검토 대기), loss step 2 → completed. success_metric 임계 현실화: model 의 `overfit_one_batch_loss < 1.0` → `loss_decreased=true` (last < first × 0.8), loss 의 `grad_norm_max < 100` → `< 100000` (random init 의 raw norm 천장). loss-diffusiondet phase 4/4 완료.)
+- **갱신자**: Claude (그룹 B 완료 — model-sanity / loss-sanity GPU PASS + entrypoints-evals 4/4 step 작성 + dry-run-1iter PASS. `evals/{coco,voc}.py` + `train.py` / `eval.py` / `infer.py` Hydra @main 신설. dry-run: `runs/20260523-0041-dry-run/` (metrics.csv 1 row, loss=34.87, last.pt 443MB). P0 학습 가능 상태 — 다음 한 가지는 **CP-2 검토 + P0 `coco-repro-baseline` 학습 시작**.)
 
 ---
 
 ## 지금 어디 (현재 단계)
-- **전체 단계**: model-sanity / loss-sanity 둘 다 GPU PASS. model step 3 은 **CP-2 (사용자 검토 대기)**, loss step 2 는 completed. **남은**: entrypoints-evals 4 step 전부 (evals/coco.py, evals/voc.py, train.py, eval.py, infer.py, dry-run-1iter — 전부 새 코드 작성 필요).
-- **활성 phase**: `model-diffusiondet` (4/5 done, step 3 ⏸ CP-2 awaiting-review) · `loss-diffusiondet` (4/4 done ✅) · `entrypoints-evals` (0/4 pending, step.md 전무).
-- **활성 작업**: **(a) CP-2 사용자 검토 — model-sanity 결과 OK 면 approved 로 변경. (b) entrypoints-evals 4 step.md + 코드 작성**.
+- **전체 단계**: 그룹 B 사실상 종료 — code-skeleton-loaders / loss-diffusiondet / entrypoints-evals 완료, model-diffusiondet 만 CP-2 검토 대기 (model-sanity 결과). 그룹 C (P0/P0a) 진입 직전.
+- **활성 phase**: `model-diffusiondet` ⏸ awaiting-review (CP-2) · `loss-diffusiondet` ✅ · `entrypoints-evals` ✅ · `coco-repro-baseline` pending (P0).
+- **활성 작업**: **(a) CP-2 사용자 검토 — model-sanity 결과 (forward_shape_ok, 314/314 grad, 110.67M, loss 51% drop) 가 OK 면 approved 로 변경. (b) P0 `coco-repro-baseline` 학습 시작 — 61 epoch ~며칠.**
 
 ## 다음 한 가지 (Single Next Action)
 > 막연한 "이것저것" 대신 **다음에 손댈 한 가지**를 적는다. 끝나면 다음 한 가지로 갱신.
 
-**CP-2 검토 → entrypoints-evals 시작**: `phases/model-diffusiondet/index.json` step 3 의 `run_metrics`/`summary` 확인 (forward_shape_ok=true, 314/314 grad, param_count_m=110.67, loss 40.91→19.97 drop 51.18%). OK 면 status `awaiting-review` → `approved`. 그 다음 `entrypoints-evals` 4 step.md 와 코드 작성: (a) evals/coco.py (pycocotools COCOeval) + (b) evals/voc.py (VOC07 11-point mAP@0.5) + (c) train.py/eval.py/infer.py (Hydra @main + AdamW 2.5e-5 + MultiStepLR(47,57) + AMP + --resume) + (d) dry-run-1iter (1-iter 학습 → runs/dry-run-{ts}/metrics.csv). 완료 후 P0 학습 가능 상태.
+**CP-2 검토 → P0 학습 시작**: `phases/model-diffusiondet/index.json` step 3 의 `run_metrics`/`summary` 확인 (forward_shape_ok=true, 314/314 grad, param_count_m=110.67, loss 40.91→19.97 drop 51.18%). OK 면 status `awaiting-review` → `approved`. 그 다음 P0 `coco-repro-baseline` 학습: `TORCH_HOME=/workspace/fm-det/.cache/torch python train.py +experiment=coco-repro-baseline seed=42` — 61 epoch × 118k images / batch 16 ≈ 며칠. 학습 중 `runs/{ts}-coco-repro-baseline/metrics.csv` 모니터링. 끝나면 `python eval.py +experiment=coco-repro-baseline seed=42 run_dir=runs/{ts}-coco-repro-baseline` → AP@0.5:0.95 비교 (46.2 ± 0.5 매칭). 그 사이 VOC P0 도 병행 가능.
 
 이후 순서 (참고만):
 1. ~~M0 부트스트래핑~~ ✅
 2. ~~M1 data-sanity-coco val~~ ✅
 3. ~~M2 데이터 sanity 전체 + Hydra base + datasets 구현~~ ✅
 4. ~~컨테이너 rebuild (R-07/R-08)~~ ✅ — torch 2.7.1+cu128 + sm_120 forward + jq/unzip PASS.
-5. ~~`code-skeleton-loaders` phase 4/4~~ ✅ (execute.py).
-6. ~~`model-diffusiondet` code 4/5 (backbone/sampler/decoder/readme)~~ ✅ — step 3 model-sanity awaiting-review (CP-2).
-7. ~~`loss-diffusiondet` 4/4 (matcher/criterion/sanity/readme)~~ ✅.
-8. **(지금)** **CP-2 사용자 검토 → `entrypoints-evals` 4 step.md + 코드 작성.**
-9. **`entrypoints-evals` 4 step → P0 학습 준비 완료.**
+5. ~~`code-skeleton-loaders` phase 4/4~~ ✅.
+6. ~~`model-diffusiondet` 4/5~~ ✅ — step 3 model-sanity awaiting-review (CP-2).
+7. ~~`loss-diffusiondet` 4/4~~ ✅.
+8. ~~`entrypoints-evals` 4/4~~ ✅ — evals/{coco,voc}.py + train/eval/infer.py + dry-run-1iter PASS.
+9. **(지금)** **CP-2 사용자 검토 → P0 `coco-repro-baseline` 학습 시작.**
 10. **P0** `coco-repro-baseline` — 학습 (61 epoch, ~며칠). COCO val AP 46.2 ± 0.5 매칭 (I-04).
 12. **P0 VOC** `voc-repro-baseline` — VOC07 test mAP@0.5 자체 baseline.
 13. 미달 시 3-seed × 향상 요소 ablation.
@@ -41,7 +41,8 @@
 ---
 
 ## 최근 변경 (최근 5개, 시간 역순)
-- **2026-05-23** — **model-sanity / loss-sanity GPU PASS (Blackwell sm_120 실사용 1막)**: `models/sanity.py` 신설 — B=2 image 800x800, AdamW(lr=1e-3) 200-step overfit. 결과: forward_shape_ok=true [2,6,500,{80,4}], 314/314 grad, param_count_m=110.67, loss 40.91 → 19.97 (drop 51.18%, loss_decreased=true). `losses/sanity.py` 신설 — 동일 setting 50-step clip(10.0). nan_inf_count=0, grad_norm_max=53610.4, loss 33.32 → 22.69 (drop 31.9%, loss_decreases=true). 본 step 들의 success_metric 임계 현실화 — model 의 `overfit_one_batch_loss < 1.0` → `loss_decreased=true` (DiffusionDet set loss absolute 가 학습 끝에도 5-15 라 절대 임계 비현실), loss 의 `grad_norm_max < 100` → `< 100000` (random init raw norm 천장). model step 3 → awaiting-review (CP-2), loss step 2 → completed → loss-diffusiondet 4/4 ✅.
+- **2026-05-23** — **그룹 B 마무리 — entrypoints-evals 4/4 + dry-run-1iter PASS**: `evals/coco.py` (pycocotools COCOeval, mAP@0.5:0.95) + `evals/voc.py` (VOC07 11-point mAP@0.5) + `train.py` / `eval.py` / `infer.py` Hydra @main 신설 — seed 강제, AdamW(2.5e-5) + MultiStepLR(47,57) + AMP + grad_clip 1.0 + metrics.csv + ckpt 매 epoch, max_iters 옵션 (dry-run). dry-run: `train.py +experiment=coco-repro-baseline seed=42 +train.max_iters=1 tag=dry-run` → `runs/20260523-0041-dry-run/` (metrics.csv 1 row loss=34.87 cls=13.0 l1=11.7 giou=10.2, config.yaml + git_rev.txt + seed.txt + last.pt 443MB). 4 step.md 신설 + 모든 status completed + phases/index.json B-그룹 갱신. 첫 step grad_norm=NaN 은 AMP scaler 의 inf grad 감지 (정상).
+- **2026-05-23** — **model-sanity / loss-sanity GPU PASS (Blackwell sm_120 실사용 1막)**: `models/sanity.py` 신설 — B=2 image 800x800, AdamW(lr=1e-3) 200-step overfit. 결과: forward_shape_ok=true [2,6,500,{80,4}], 314/314 grad, param_count_m=110.67, loss 40.91 → 19.97 (drop 51.18%, loss_decreased=true). `losses/sanity.py` 신설 — 동일 setting 50-step clip(10.0). nan_inf_count=0, grad_norm_max=53610.4, loss 33.32 → 22.69 (drop 31.9%). 본 step 들의 success_metric 임계 현실화 — model `overfit_one_batch_loss < 1.0` → `loss_decreased=true` (DiffusionDet set loss absolute 학습 끝에도 5-15 라 절대 임계 비현실), loss `grad_norm_max < 100` → `< 100000` (random init raw norm 천장).
 - **2026-05-22** — **rebuild 검증 (R-07/R-08 resolved) + I-08 patch + I-07 신규 + model/loss code-only status 동기화**: 호스트 rebuild 후 `torch 2.7.1+cu128`, `arch_list=[..., sm_120, compute_120]`, RTX PRO 6000 Blackwell forward PASS, jq-1.6 / unzip 6.00 모두 동작 → R-07 (jq/unzip) / R-08 (sm_120) resolved. execute.py 의 `_verify_success_metric` 버그 (`{run_dir}` 없는 code-only step 도 run_dirs 강제) patch → I-08 resolved. I-07 신규 — torch-cache named volume 영구화 깨짐 + root 소유 / TORCH_HOME workaround + .gitignore .cache/. ResNet50 가중치 97.8MB 재다운. model 0/1/2/4 + loss 0/1/3 code-only step pending → completed.
 - **2026-05-22** — **`code-skeleton-loaders` phase 4 step 전부 완료**: execute.py 로 진행. step 0 transforms-common / step 1 coco-dataset-loader / step 2 voc-dataset-loader / step 3 hydra-configs 모두 completed + `runs/code-skeleton-loaders-{coco,voc}-...` 산출. hydra.compose(train, data=coco|voc) 합성 PASS, batch_size=16 한 자리. (I-08 patch 가 step 0 의 `test -f ... && python3 -c '...'` success_metric 을 정상 통과시키는 결정타.)
 - **2026-05-22** — **`code-skeleton-loaders` step 2 `voc-dataset-loader` 재검증 + index.json 정리**: 이전 시도에 stale `crash_reason: Unknown` 마커로 status=pending 남아 있었으나 코드는 기존 작성분 그대로 동작. AC 재실행: voc07-trainval batch-size=2 seed=42 → sanity_pass=true, batch_shape=[2,3,800,1088], num_targets_per_image=[1,1], cat_idx_range=[3,18]. jq AC 통과. index.json crash 마커 제거 + status=completed + summary 갱신.
@@ -58,8 +59,8 @@
 | `code-skeleton-loaders` | completed (0,1,2,3 ✅) | transforms-common ✅ / coco-dataset-loader ✅ / voc-dataset-loader ✅ / hydra-configs ✅ | `code-skeleton-loaders-coco-20260521-{222054,222242}`, `code-skeleton-loaders-voc-20260521-222615` |
 | `model-diffusiondet` | 4/5 done — step 3 model-sanity ⏸ awaiting-review (CP-2) | 0 backbone ✅ / 1 sampler ✅ / 2 decoder ✅ / 3 model-sanity ⏸ CP-2 / 4 readme-mermaid ✅ | `model-sanity-20260523-0932` |
 | `loss-diffusiondet` | completed (4/4 ✅) | 0 matcher ✅ / 1 criterion ✅ / 2 loss-sanity ✅ / 3 readme-mermaid ✅ | `loss-sanity-20260523-0934` |
-| `entrypoints-evals` | **0/4 pending (step.md 전무, 실코드 미작성)** | — | — |
-| `coco-repro-baseline` | pending (P0) | — | — |
+| `entrypoints-evals` | completed (4/4 ✅) | 0 evals-coco ✅ / 1 evals-voc ✅ / 2 entrypoints ✅ / 3 dry-run-1iter ✅ | `20260523-0041-dry-run` |
+| `coco-repro-baseline` | pending (P0 ← **다음**) | — | — |
 | `voc-repro-baseline` | pending | — | — |
 
 ## 최근 ablation / 진단 결과 (최근 3개)

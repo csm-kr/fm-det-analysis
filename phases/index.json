@@ -23,18 +23,21 @@
     },
     {
       "dir": "model-diffusiondet",
-      "status": "pending",
-      "group": "B"
+      "status": "awaiting-review",
+      "group": "B",
+      "note": "step 3 model-sanity CP-2 사용자 검토 대기 (4/5 step completed)"
     },
     {
       "dir": "loss-diffusiondet",
-      "status": "pending",
-      "group": "B"
+      "status": "completed",
+      "group": "B",
+      "completed_at": "2026-05-23T09:35:46+0900"
     },
     {
       "dir": "entrypoints-evals",
-      "status": "pending",
-      "group": "B"
+      "status": "completed",
+      "group": "B",
+      "completed_at": "2026-05-23T09:44:23+0900"
     },
     {
       "dir": "coco-repro-baseline",
