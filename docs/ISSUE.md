@@ -24,6 +24,24 @@
 
 ## 진행 중 (open / blocked)
 
+### I-09: 학습 python 프로세스가 부모 Claude 세션 종료 시 SIGHUP 으로 같이 사망 (no traceback)
+- **상태**: resolved (2026-05-23 — 재시작 시 `nohup setsid ... < /dev/null &` 패턴으로 PPID=1 detach)
+- **발견일**: 2026-05-23
+- **카테고리**: tooling / training
+- **증상**: P0 COCO (run_dir 0709, 0933) 와 VOC (run_dir 1233) 학습이 모두 **train.log 에 traceback 없이** 갑자기 멈춤. last 로그 라인이 정상 iter (예: VOC `iter 1800 loss=23.04 grad=67`) → 다음 raw 가 없음. metrics.csv 마지막 raw 와 같은 시각에 끊김. `ps -p <pid>` 찾을 수 없음 (`/proc/<pid>` 없음). GPU 점유 0%. 호스트 RAM·swap 여유 있음 (OOM 아님). dmesg 접근 불가 (컨테이너 내 root 아님).
+- **원인**: 학습을 시작한 다른 Claude 세션 (PID 1537208 같은 별도 `claude` 프로세스) 이 종료될 때, 그 세션이 띄운 `python train.py` 가 child 였다면 **SIGHUP 전파로 같이 종료**. python 은 SIGHUP 의 default handler (terminate) 를 그대로 받음 → traceback 없이 silent exit. `nohup` 만으로는 부족할 수 있고 (setsid 가 없으면 같은 process group 에 머무름) — 진짜 detach 하려면 **`nohup setsid python ... < /dev/null > log 2>&1 &`** 로 새 session/pgrp + stdin 단절 까지 모두 필요.
+- **해결책 / 우회**:
+  - **재시작 패턴 (PPID=1 보장)**:
+    ```bash
+    nohup setsid env TORCH_HOME=/workspace/fm-det/.cache/torch \
+      python train.py +experiment={tag} seed=42 \
+      > phases/{tag}/train.log 2>&1 < /dev/null &
+    # 진짜 python pid 는 setsid 후 fork 된 child — pgrep -af "train.py.*{tag}" 의 PPID=1 짜리.
+    pgrep -af "train.py.*{tag}" | head -1 | awk '{print $1}' > phases/{tag}/train.pid
+    ```
+  - **검증**: `ps -p <pid> -o ppid,pgid,sid,stat,cmd` 에서 PPID=1, SID==PID, STAT 에 `s` (session leader) 포함이어야 함.
+- **재발 방지**: 모든 장시간 학습은 **launcher script 의 한 줄로** 위 패턴 강제. `scripts/launch_train.sh` 같은 정본 헬퍼 신설을 다음 phase 에서 검토. 또한 `phases/{tag}/train.pid` 의 PID 가 PPID=1 짜리 python 인지 launch 직후 검증 한 줄 (`ps -o ppid= -p $(cat train.pid)` == 1) 추가 권장. `phases/{tag}/step0.md` 의 명령 예시도 `nohup setsid ... < /dev/null` 패턴으로 갱신 권장 (현재는 `nohup ... &` 만).
+
 ### I-08: execute.py 의 `_verify_success_metric` 가 `{run_dir}` 없는 code-only success_metric 을 강제 error 처리
 - **상태**: resolved (2026-05-22 — code patch 적용)
 - **발견일**: 2026-05-22

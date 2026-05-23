@@ -8,19 +8,19 @@
 
 ## 마지막 업데이트
 - **일시**: 2026-05-23
-- **갱신자**: Claude (P0 학습 **이전 시도 iter 2825 에서 NaN loss assertion 으로 죽음** → train.py 3 가지 fix (NaN skip + warmup_iters=1000 적용 + 1000 iter 마다 last.pt) 후 재시작. **new PID 1291109, run_dir `runs/20260523-0709-coco-repro-baseline`**. iter 1 loss=34.87 / lr=2.5e-7 (warmup × 0.01 적용 ✓). TB 살아있음 `http://localhost:6007`.)
+- **갱신자**: Claude (**P0 VOC 학습 재시작 — PID 1614767, run_dir `runs/20260523-1416-voc-repro-baseline`**. 이전 VOC 시도 (PID 1520829, run_dir 1233) 가 iter 1805/epoch 3 에서 **다른 Claude 세션 종료 → SIGHUP → 사망** (no traceback). decoder.py 4 가지 fix (FFN↔FiLM 순서 / dyn-conv ordering / bbox.detach / xavier init) 커밋 (bdcb4cd) + push 후 **`nohup setsid python ... < /dev/null &`** 로 PPID=1 detach 재시작. iter 1 loss=38.96 grad_norm=476 (이전 15369 보다 30× 낮음 — decoder fix 효과 가능). GPU 100% util / 72GB mem.)
 
 ---
 
 ## 지금 어디 (현재 단계)
-- **전체 단계**: **그룹 C 진입 — P0 `coco-repro-baseline` 학습 재시작 진행 중 (PID 1291109, run_dir `runs/20260523-0709-coco-repro-baseline`)**. 이전 시도 (PID 1223689, run_dir 0531) 는 iter 2825 (~38분) 에서 NaN loss assertion 으로 죽음. train.py 3 가지 fix 후 재시작.
-- **활성 phase**: `coco-repro-baseline` step 0 진행 중 · `voc-repro-baseline` pending.
-- **활성 작업**: **학습 모니터링** — `tail -f phases/coco-repro-baseline/train.log` + `nvidia-smi` + TB `http://localhost:6007`. ckpt 매 1000 iter (~10분) + 매 epoch 저장 → crash 시 손실 최소화. 학습 종료 후 eval.py.
+- **전체 단계**: **그룹 C 진입 — P0 `voc-repro-baseline` 학습 재시작 진행 중 (PID 1614767, PPID=1 detach, run_dir `runs/20260523-1416-voc-repro-baseline`)**. COCO 0933 run 도 같은 SIGHUP 으로 사망 (iter 4400 / epoch 0) — 별도 재시작 필요. 최근 commit f23d21c (decoder fix + phase 상태 push).
+- **활성 phase**: `voc-repro-baseline` step 0 진행 중 · `coco-repro-baseline` step 0 사망 (재시작 대기).
+- **활성 작업**: **VOC 학습 모니터링** — `tail -f phases/voc-repro-baseline/train.log` + `nvidia-smi` + TB `http://localhost:6007`. ckpt 매 1000 iter + 매 epoch.
 
 ## 다음 한 가지 (Single Next Action)
 > 막연한 "이것저것" 대신 **다음에 손댈 한 가지**를 적는다. 끝나면 다음 한 가지로 갱신.
 
-**P0 학습 모니터링 + 종료 후 eval**: ① 학습 진행 중 — 매 epoch 끝 (1-2h) train.log 에 epoch 별 로그 + ckpt 저장 확인. **재발 시 손실 최소화**: 1000 iter 마다 last.pt 저장됨 → crash 시 `+train.resume=runs/20260523-0709-coco-repro-baseline/checkpoints/last.pt` (NOTE: train.py 가 `+train.resume` 인자 아직 미구현 — 필요 시 추가). ② 학습 자연 종료 (61 epoch, 2-5 day) 후 → `TORCH_HOME=/workspace/fm-det/.cache/torch python eval.py +experiment=coco-repro-baseline seed=42 run_dir=runs/20260523-0709-coco-repro-baseline` → AC `0.457 ≤ metric_primary ≤ 0.467` 검증.
+**VOC 학습 모니터링 + COCO 재시작**: ① VOC 학습 진행 중 — 30-60분 안 epoch 0 끝 (iter 517) → eval 시작. **mAP 변화 주시** (이전 1233 run 은 epoch 0~2 까지 mAP≈0 stuck — decoder fix 후 회복 여부 확인). ② COCO 도 같은 패턴으로 재시작 필요 — `nohup setsid env TORCH_HOME=/workspace/fm-det/.cache/torch python train.py +experiment=coco-repro-baseline seed=42 > phases/coco-repro-baseline/train.log 2>&1 < /dev/null &`. ③ 학습 자연 종료 후 → `python eval.py +experiment=voc-repro-baseline seed=42 run_dir=runs/20260523-1416-voc-repro-baseline`.
 
 이후 순서 (참고만):
 1. ~~M0 부트스트래핑~~ ✅
@@ -41,6 +41,7 @@
 ---
 
 ## 최근 변경 (최근 5개, 시간 역순)
+- **2026-05-23** — **P0 VOC 학습 SIGHUP 사망 → decoder fix push + detach 재시작**: 이전 시도 (PID 1520829, run_dir 1233) 가 iter 1805 / epoch 3 에서 sudden death (no traceback in log → exception 이 아니라 외부 SIGKILL/SIGHUP). 원인: train.py 를 시작한 *다른* Claude 세션이 종료되면서 child 인 python 도 같이 죽음 (I-09). 조치: (1) `models/decoder.py` 의 누적 fix 4 가지 (FFN↔FiLM 순서·dyn-conv batch ordering·bbox.detach·xavier+focal-bias init) commit bdcb4cd → push f23d21c. (2) `nohup setsid env TORCH_HOME=... python train.py ... < /dev/null &` 로 PPID=1 detach. (3) new PID 1614767, run_dir 1416. iter 1 grad_norm=476 (이전 15369 의 1/30 → decoder fix 효과 가능). COCO 0933 run 도 같이 사망 — 별도 재시작 대기.
 - **2026-05-23** — **P0 학습 NaN crash → fix 3 가지 후 재시작**: 이전 학습 (run_dir 0531) 이 iter 2825 (~38분) 에서 NaN loss assertion 으로 죽음. 마지막 100 iter 의 grad_norm 평균 87 (clip 1.0 보다 2 자릿수 큼) → 학습 불안정. train.py fix: (1) NaN/Inf loss 시 assertion → `print("WARN ... skipping") + continue` (본 DiffusionDet repo 동일 패턴, AMP scaler 가 처리). (2) configs/train/baseline.yaml 의 `warmup_iters=1000` / `warmup_factor=0.01` 적용 — iter 0~1000 동안 lr 2.5e-7 → 2.5e-5 linear. cold-start grad explosion 완화. (3) 1000 iter 마다 last.pt 저장 (epoch 끝 ckpt 외) — crash 시 손실 최소화. 재시작 PID 1291109, run_dir 0709. iter 1 lr=2.5e-7 확인 (warmup ✓).
 - **2026-05-23** — **`models/README.md` 가독성 개편 — detection head 두 의미 분리**: 사용자 피드백 "detection head 부분이 잘 안 보임". 기존 한 mermaid 압축 → §1 전체 / §2 6-head iteration loop / §3 한 head 의 5 stage refinement (RoIAlign → Self-Attn → DynamicConv → FiLM → FFN) / §4 **output head (cls 1-layer + class_logits + focal prior bias / reg 3-layer + bboxes_delta) 별도 mermaid + 비대칭 이유 표 + 코드 매핑** / §5 컴포넌트 표에 output head 행 추가 / §9 파라미터 분포 한 줄 추가. 코드 변경 없음.
 - **2026-05-23** — **그룹 B 마무리 — entrypoints-evals 4/4 + dry-run-1iter PASS**: `evals/coco.py` (pycocotools COCOeval, mAP@0.5:0.95) + `evals/voc.py` (VOC07 11-point mAP@0.5) + `train.py` / `eval.py` / `infer.py` Hydra @main 신설 — seed 강제, AdamW(2.5e-5) + MultiStepLR(47,57) + AMP + grad_clip 1.0 + metrics.csv + ckpt 매 epoch, max_iters 옵션 (dry-run). dry-run: `train.py +experiment=coco-repro-baseline seed=42 +train.max_iters=1 tag=dry-run` → `runs/20260523-0041-dry-run/` (metrics.csv 1 row loss=34.87 cls=13.0 l1=11.7 giou=10.2, config.yaml + git_rev.txt + seed.txt + last.pt 443MB). 4 step.md 신설 + 모든 status completed + phases/index.json B-그룹 갱신. 첫 step grad_norm=NaN 은 AMP scaler 의 inf grad 감지 (정상).
