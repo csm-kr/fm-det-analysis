@@ -41,15 +41,17 @@
       "status": "pending",
       "resumable": true,
       "resume_from": "runs/{run_dir}/checkpoints/last.pt",
-      "started_at": "2026-05-23T10:14:05+0900",
-      "training_pid": 1052904,
+      "started_at": "2026-05-23T14:31:42+0900",
+      "training_pid": 1223689,
       "run_dirs": [
-        "20260523-0113-coco-repro-baseline"
+        "20260523-0531-coco-repro-baseline"
       ],
       "estimated_eta": "2-5 day (61 epoch × 7392 iter, iter ≈ 0.4-1.0s)",
-      "resume_command": "python train.py +experiment=coco-repro-baseline seed=42 +train.resume=runs/20260523-0113-coco-repro-baseline/checkpoints/last.pt",
-      "eval_command": "python eval.py +experiment=coco-repro-baseline seed=42 run_dir=runs/20260523-0113-coco-repro-baseline",
-      "status_note": "학습 백그라운드 진행 중 (PID 위에 명시). log = phases/coco-repro-baseline/train.log. 끝나면 eval.py 호출 → AC 검증 → status=completed (또는 미달 시 error + 이유)."
+      "resume_command": "TORCH_HOME=/workspace/fm-det/.cache/torch python train.py +experiment=coco-repro-baseline seed=42 +train.resume=runs/20260523-0531-coco-repro-baseline/checkpoints/last.pt",
+      "eval_command": "TORCH_HOME=/workspace/fm-det/.cache/torch python eval.py +experiment=coco-repro-baseline seed=42 run_dir=runs/20260523-0531-coco-repro-baseline",
+      "status_note": "P0 학습 백그라운드 진행 중. log = phases/coco-repro-baseline/train.log, TB = http://localhost:6007. 종료 후 eval.py 호출 → AC 검증.",
+      "tensorboard_pid": 1221355,
+      "tensorboard_url": "http://localhost:6007  (compose 매핑 6006→6007)"
     },
     {
       "step": 1,

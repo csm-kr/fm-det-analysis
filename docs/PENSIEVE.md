@@ -8,7 +8,7 @@
 
 ## 마지막 업데이트
 - **일시**: 2026-05-23
-- **갱신자**: Claude (CP-2 approved + **P0 `coco-repro-baseline` 학습 백그라운드 시작** — PID 1052904, log `phases/coco-repro-baseline/train.log`, run_dir `runs/20260523-0113-coco-repro-baseline`. iter 1 loss=34.87 (dry-run 과 일치, deterministic ✓). 추정 2-5 day (61 epoch × 7392 iter). 모든 그룹 B phase completed.)
+- **갱신자**: Claude (CP-2 approved + **P0 `coco-repro-baseline` 학습 진행 중** + **TensorBoard 통합 + 서버 가동**. train PID 1223689, TB PID 1221355, run_dir `runs/20260523-0531-coco-repro-baseline`. train.py 에 SummaryWriter 추가 (scalars: loss_total/cls/l1/giou/grad_norm/lr per iter). 호스트 접속 `http://localhost:6007`. iter 1 loss=34.87 deterministic ✓. 추정 2-5 day.)
 
 ---
 
