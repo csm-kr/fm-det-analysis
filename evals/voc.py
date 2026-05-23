@@ -45,11 +45,11 @@ def voc_eval(model, loader, device, num_classes: int = 20,
         for b in range(B):
             tgt = targets[b]
             image_id = int(tgt["image_id"])
-            orig_h, orig_w = tgt["orig_size"]
-            cur_h, cur_w = tgt["size"]
-            sx = orig_w / max(cur_w, 1)
-            sy = orig_h / max(cur_h, 1)
 
+            # GT 와 prediction 모두 *transformed (cur)* 좌표계에서 비교.
+            # transforms.py 의 RandomResize 가 tgt["boxes"] 를 cur 좌표로 scale 하고,
+            # model 도 cur 좌표로 박스를 뱉기 때문에 두 쪽 모두 cur 에서 일치시킴
+            # (이전 버전: pred 만 sx, sy 로 orig 으로 scale → GT 와 좌표계 mismatch → mAP≈0).
             gt_boxes = tgt["boxes"].clone().cpu().float()
             gt_labels = tgt["labels"].clone().cpu().long()
             gts[image_id] = (gt_labels, gt_boxes)
@@ -59,14 +59,12 @@ def voc_eval(model, loader, device, num_classes: int = 20,
             top_scores, top_idx = scs_b.topk(k)
             box_idx = top_idx // C
             cls_idx = top_idx % C
-            boxes_b = boxes[b][box_idx].clone()
-            boxes_b[:, 0::2] = boxes_b[:, 0::2] * sx
-            boxes_b[:, 1::2] = boxes_b[:, 1::2] * sy
+            boxes_b = boxes[b][box_idx].clone().cpu()
             for j in range(k):
                 s = float(top_scores[j])
                 if s < score_thresh:
                     continue
-                preds.append((image_id, int(cls_idx[j]), s, boxes_b[j].cpu()))
+                preds.append((image_id, int(cls_idx[j]), s, boxes_b[j]))
 
     per_class_ap: list[float] = []
     for c in range(num_classes):

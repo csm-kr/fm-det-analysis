@@ -8,7 +8,7 @@
 
 ## 마지막 업데이트
 - **일시**: 2026-05-23
-- **갱신자**: Claude (**P0 VOC 학습 재시작 — PID 1614767, run_dir `runs/20260523-1416-voc-repro-baseline`**. 이전 VOC 시도 (PID 1520829, run_dir 1233) 가 iter 1805/epoch 3 에서 **다른 Claude 세션 종료 → SIGHUP → 사망** (no traceback). decoder.py 4 가지 fix (FFN↔FiLM 순서 / dyn-conv ordering / bbox.detach / xavier init) 커밋 (bdcb4cd) + push 후 **`nohup setsid python ... < /dev/null &`** 로 PPID=1 detach 재시작. iter 1 loss=38.96 grad_norm=476 (이전 15369 보다 30× 낮음 — decoder fix 효과 가능). GPU 100% util / 72GB mem.)
+- **갱신자**: Claude (**VOC eval 좌표계 버그 (I-10) fix — mAP@0.5 0.0000 → 0.3251 (8장 subset, epoch 25 ckpt). 모델·loss 는 정상, eval 만 깨졌었음**. `evals/voc.py` 에서 prediction sx,sy scaling 제거 (GT 와 둘 다 cur 좌표). 학습 (PID 1614767, run_dir 1416) 은 그대로 진행 중 — epoch 26 iter 13800 loss=3.81 정상. fix 는 다음 학습 process 의 epoch eval 부터 반영. 진단 도구: `phases/voc-repro-baseline/debug_eval_inference.py` (last.pt 로드 + overlay PNG + buggy/fixed mAP 비교).)
 
 ---
 
@@ -41,6 +41,7 @@
 ---
 
 ## 최근 변경 (최근 5개, 시간 역순)
+- **2026-05-23** — **VOC eval 좌표계 버그 fix (I-10) — mAP@0.5 0.0000 → 0.3251 (8 장 subset, epoch 25 ckpt)**: epoch 0~25 내내 mAP≈0 인 의문 추적. 원인: `evals/voc.py` 가 prediction 을 sx,sy 로 orig 좌표 scale 하는데 GT 는 transforms 후 cur 좌표 그대로 → IoU mismatch → 모두 FP. 모델·loss 는 정상이었음 (loss 38.95 → 3.5 정상 감소). Fix: prediction scaling 제거, 둘 다 cur 에서 비교. Sanity tool: `phases/voc-repro-baseline/debug_eval_{coords,inference}.py` — coord 진단 + last.pt 로드 + GT/pred PNG overlay 산출 + buggy vs fixed mAP 비교. evals/coco.py 는 pycocotools 가 외부 ann json (orig) 과 비교라 다른 케이스 (scaling 정당).
 - **2026-05-23** — **P0 VOC 학습 SIGHUP 사망 → decoder fix push + detach 재시작**: 이전 시도 (PID 1520829, run_dir 1233) 가 iter 1805 / epoch 3 에서 sudden death (no traceback in log → exception 이 아니라 외부 SIGKILL/SIGHUP). 원인: train.py 를 시작한 *다른* Claude 세션이 종료되면서 child 인 python 도 같이 죽음 (I-09). 조치: (1) `models/decoder.py` 의 누적 fix 4 가지 (FFN↔FiLM 순서·dyn-conv batch ordering·bbox.detach·xavier+focal-bias init) commit bdcb4cd → push f23d21c. (2) `nohup setsid env TORCH_HOME=... python train.py ... < /dev/null &` 로 PPID=1 detach. (3) new PID 1614767, run_dir 1416. iter 1 grad_norm=476 (이전 15369 의 1/30 → decoder fix 효과 가능). COCO 0933 run 도 같이 사망 — 별도 재시작 대기.
 - **2026-05-23** — **P0 학습 NaN crash → fix 3 가지 후 재시작**: 이전 학습 (run_dir 0531) 이 iter 2825 (~38분) 에서 NaN loss assertion 으로 죽음. 마지막 100 iter 의 grad_norm 평균 87 (clip 1.0 보다 2 자릿수 큼) → 학습 불안정. train.py fix: (1) NaN/Inf loss 시 assertion → `print("WARN ... skipping") + continue` (본 DiffusionDet repo 동일 패턴, AMP scaler 가 처리). (2) configs/train/baseline.yaml 의 `warmup_iters=1000` / `warmup_factor=0.01` 적용 — iter 0~1000 동안 lr 2.5e-7 → 2.5e-5 linear. cold-start grad explosion 완화. (3) 1000 iter 마다 last.pt 저장 (epoch 끝 ckpt 외) — crash 시 손실 최소화. 재시작 PID 1291109, run_dir 0709. iter 1 lr=2.5e-7 확인 (warmup ✓).
 - **2026-05-23** — **`models/README.md` 가독성 개편 — detection head 두 의미 분리**: 사용자 피드백 "detection head 부분이 잘 안 보임". 기존 한 mermaid 압축 → §1 전체 / §2 6-head iteration loop / §3 한 head 의 5 stage refinement (RoIAlign → Self-Attn → DynamicConv → FiLM → FFN) / §4 **output head (cls 1-layer + class_logits + focal prior bias / reg 3-layer + bboxes_delta) 별도 mermaid + 비대칭 이유 표 + 코드 매핑** / §5 컴포넌트 표에 output head 행 추가 / §9 파라미터 분포 한 줄 추가. 코드 변경 없음.

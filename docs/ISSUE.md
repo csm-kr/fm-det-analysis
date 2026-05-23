@@ -24,6 +24,18 @@
 
 ## 진행 중 (open / blocked)
 
+### I-10: VOC eval 가 prediction 만 orig 좌표로 scale 하고 GT 는 cur 좌표로 둠 — mAP≈0 false-negative (실제 학습 정상)
+- **상태**: resolved (2026-05-23 — evals/voc.py 의 prediction sx, sy scaling 제거, 둘 다 cur 좌표에서 비교)
+- **발견일**: 2026-05-23
+- **카테고리**: eval
+- **증상**: VOC 학습이 epoch 0~25 내내 metric_primary=mAP@0.5≈0.0001 (per_class 거의 다 0). loss 는 38.95 → 3.5 로 정상 감소. eval 만 망가진 듯한 패턴 ("학습 안 되는 것 같다" 의문).
+- **원인**: `datasets/transforms.py:46-51` 의 RandomResize 가 tgt["boxes"] 를 cur(resized) 좌표로 scale. `datasets/voc/dataset.py:87` 에서 tgt["size"] 는 cur 로 갱신되지만 tgt["orig_size"] 는 그대로 orig. `evals/voc.py:62-64` 가 prediction 만 `sx = orig_w/cur_w, sy = orig_h/cur_h` 로 scale 해서 orig 좌표로 보냄. 결과: pred(orig 좌표) vs GT(cur 좌표) box_iou → IoU 거의 0 → 모든 prediction FP → mAP≈0. 8 장 sanity check 결과 fix 후 mAP@0.5 = **0.0000 → 0.3251** (epoch 25 last.pt).
+- **해결책 / 우회**: `evals/voc.py` 의 prediction sx, sy scaling 제거 (둘 다 cur 좌표에서 비교). mAP 의 정의는 ratio-based 라 좌표계 절대값 무관, 일치만 보장하면 됨. evals/coco.py 는 pycocotools 가 coco_gt(json, orig 좌표) 와 비교하므로 prediction → orig scale 이 *맞음* (다른 케이스). 둘을 헷갈리지 말 것.
+- **재발 방지**:
+  - 새 eval lib 추가 시 "GT 가 어디서 오는지" (target dict 인지 외부 ann json 인지) 와 "transforms 가 GT 를 건드리는지" 두 축 확인.
+  - mAP=0 + loss 정상 감소 패턴이면 첫 의심은 **train/eval 좌표계 mismatch** (또는 class idx off-by-one). `phases/voc-repro-baseline/debug_eval_inference.py` 가 fix 전후 mAP 비교 + GT/pred overlay PNG 산출 — 다음에 같은 의심 시 첫 도구.
+  - 학습 시작 시 epoch 1 후 mAP 가 정확히 0.0 (random init 보다도 낮음) 이면 즉시 eval 의심. random init 모델의 lower bound 가 0.001-0.003 정도이므로 epoch 1 에서 0.0000 은 의심 신호.
+
 ### I-09: 학습 python 프로세스가 부모 Claude 세션 종료 시 SIGHUP 으로 같이 사망 (no traceback)
 - **상태**: resolved (2026-05-23 — 재시작 시 `nohup setsid ... < /dev/null &` 패턴으로 PPID=1 detach)
 - **발견일**: 2026-05-23
