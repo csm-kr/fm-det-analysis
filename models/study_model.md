@@ -135,16 +135,16 @@ ResNet stages (bottom-up)         FPN (top-down + lateral)
 ─────────────────────────         ──────────────────────────────
 
 C2 [256, H/4, W/4]   ───[1x1]──→  L2  ──┐
-                                         + ◄── upsample(prev)  ──[3x3]──→  P2 [256, H/4, W/4]
-                                         │                      ↑ smoothing
+                                         + ◄── F.interpolate(prev, mode='nearest', size=L2.shape)  ──[3x3]──→  P2 [256, H/4, W/4]
+                                         │                                                            ↑ anti-aliasing
 C3 [512, H/8, W/8]   ───[1x1]──→  L3  ──┤
-                                         + ◄── upsample(prev)  ──[3x3]──→  P3 [256, H/8, W/8]
+                                         + ◄── F.interpolate(prev, mode='nearest', size=L3.shape)  ──[3x3]──→  P3 [256, H/8, W/8]
                                          │
 C4 [1024, H/16, W/16]───[1x1]──→  L4  ──┤
-                                         + ◄── upsample(prev)  ──[3x3]──→  P4 [256, H/16, W/16]
+                                         + ◄── F.interpolate(prev, mode='nearest', size=L4.shape)  ──[3x3]──→  P4 [256, H/16, W/16]
                                          │
 C5 [2048, H/32, W/32]───[1x1]──→  L5  ─→ ↓
-                                          └────────────────────[3x3]──→  P5 [256, H/32, W/32]
+                                          └────────────────────[3x3]──────────────────────────────→  P5 [256, H/32, W/32]
                                           (top-down 의 출발점, upsample 받는 input 없음)
 
 
@@ -152,6 +152,7 @@ C5 [2048, H/32, W/32]───[1x1]──→  L5  ─→ ↓
 - bottom-up: ResNet 의 자연스러운 forward (C2 → C3 → C4 → C5).
 - top-down: P5 에서 시작해 P4, P3, P2 순으로 거꾸로 내려옴.
 - lateral: 같은 stride 의 C_i 를 1x1 conv 로 채널 256 맞춰 더함.
+- upsample: **F.interpolate(mode='nearest')** — pixel copy, 파라미터 0. **ConvTranspose2d 아님**. 자세히 §1.6.
 ```
 
 ### 1.3. 단계별 변환표
