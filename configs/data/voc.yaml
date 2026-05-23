@@ -1,0 +1,24 @@
+name: voc
+data_root: data
+num_classes: 20
+
+devkit_root: ${.data_root}/voc/VOCdevkit
+train_split: voc-trainval-combined  # VOC07 trainval + VOC12 trainval
+eval_split: voc07-test
+
+batch_size: 32  # bf16 + 96GB GPU 메모리 여유 활용. VOC 는 본 repo baseline 없음 → 자체 baseline 이라 effective batch 변경 OK. lr scaling 은 안 함 (한 변수만 변경).
+num_workers: 8
+pin_memory: true
+
+transforms:
+  train:
+    short_sides: [480, 512, 544, 576, 608, 640, 672, 704, 736, 768, 800]
+    max_size: 1333
+    flip_prob: 0.5
+  eval:
+    short_sides: [800]
+    max_size: 1333
+    flip_prob: 0.0
+
+mean: [0.485, 0.456, 0.406]
+std: [0.229, 0.224, 0.225]
