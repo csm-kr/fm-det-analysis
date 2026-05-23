@@ -197,7 +197,93 @@ self.body = resnet_fpn_backbone(
 
 torchvision 의 `_default_anchorgen` 내부에서 `FeaturePyramidNetwork(in_channels_list=[256,512,1024,2048], out_channels=256, ...)` 가 위 1.2 의 흐름을 정확히 수행.
 
-### 1.6. DiffusionDet 에서 FPN 의 다음 단계
+### 1.6. Top-down upsample — "아래 feature 를 위로 올리는" 메커니즘
+
+**한 줄 의미**: low-res (의미 강함, 위치 모호) 를 high-res 자리로 옮겨서 — high-res 영역에 의미를 주입.
+
+#### 1.6.1. upsample mode: `nearest`
+
+torchvision FPN 의 default + DiffusionDet 본 repo 동치:
+
+```python
+# torchvision/ops/feature_pyramid_network.py
+inner_top_down = F.interpolate(last_inner, size=feat_shape, mode="nearest")
+```
+
+`scale_factor` 가 아닌 `size=feat_shape` 명시 — 입력 H,W 가 정확한 2 배수 아닐 수도 있으니 lateral 의 shape 에 정확히 맞춤.
+
+#### 1.6.2. Nearest neighbor 가 뭔지
+
+```
+원본 (low-res) [3, 3]:                Upsample 2x [6, 6] (nearest):
+                                          a a b b c c
+   a b c                                  a a b b c c
+   d e f       ─────[nearest 2x]─→        d d e e f f
+   g h i                                  d d e e f f
+                                          g g h h i i
+                                          g g h h i i
+
+같은 pixel 을 2x2 로 copy. 보간 없음. 파라미터 0.
+```
+
+#### 1.6.3. 왜 nearest? (bilinear / deconv 도 가능하지만 안 씀)
+
+| 방식 | 장단점 | FPN 채택 |
+|---|---|---|
+| **nearest** | 파라미터 0, 빠름, blocky → 다음 3x3 conv 가 흡수 | ✅ |
+| bilinear | 부드러움, 파라미터 0, 약간 느림 | X (이론적으로 가능) |
+| ConvTranspose2d ("학습 가능 upsample") | 파라미터 ↑, checkerboard artifact 위험 | X (FPN 디자인 의도와 안 맞음) |
+
+FPN paper (Lin et al. 2017) 의 의도:
+> "We use nearest neighbor upsampling for simplicity."
+
+뒤에 오는 **3×3 anti-aliasing conv** 가 nearest 의 blocky artifact 를 흡수. 이 conv 가 학습되면서 "어디가 진짜 edge 인가" 를 학습.
+
+#### 1.6.4. 한 level 의 처리 ASCII
+
+```
+[P5 lateral] L5 [256, 25, 25]
+       │
+       ▼ ① nearest upsample 2x  (같은 값 2x2 복제)
+       │
+[L5↑]    [256, 50, 50]   ← P4 영역으로 "올라옴". blocky.
+       +
+[P4 lateral] L4 [256, 50, 50]   ← 원래 자리의 detail / 위치 정보
+       │
+       ▼ ② element-wise add  (의미 + 위치)
+       │
+[ADD4]   [256, 50, 50]
+       │
+       ▼ ③ 3x3 conv  (blocky 흡수, edge 정련)
+       │
+[P4]     [256, 50, 50]   ← 완성. 의미 (from L5) + 위치 (from L4) 모두.
+```
+
+이를 P4→P3, P3→P2 도 똑같이 반복. 4 level 모두 채널 256 통일 + 의미 + 위치 가짐.
+
+#### 1.6.5. 시각화 — "아래 → 위" 의미 흐름
+
+```
+ResNet 깊이 방향 (semantic 점점 강함)
+─────────────────────────────────────────
+                            P5 [256, 25, 25]     ← C5 의 강한 의미 그대로
+                                 │
+                                 ↓ upsample + add L4 + 3x3 conv
+                            P4 [256, 50, 50]     ← P5 의 의미 ↓ + L4 의 위치
+                                 │
+                                 ↓ upsample + add L3 + 3x3 conv
+                            P3 [256, 100, 100]   ← P4 의 의미 ↓ + L3 의 위치
+                                 │
+                                 ↓ upsample + add L2 + 3x3 conv
+                            P2 [256, 200, 200]   ← P3 의 의미 ↓ + L2 의 위치
+                                                  (high-res + semantic)
+```
+
+이게 "아래 (low-res, 의미 강함) 를 위 (high-res 자리) 로 올리는" 메커니즘. 마지막엔 P2 도 의미를 가지게 됨.
+
+---
+
+### 1.7. DiffusionDet 에서 FPN 의 다음 단계
 
 4 개 P feature 가 list 로 backbone forward 출력 → decoder 의 매 DetectionHead 가 같은 4 features 를 reference 로 RoIAlign 호출:
 
