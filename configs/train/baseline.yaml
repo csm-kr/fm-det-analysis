@@ -13,8 +13,9 @@ scheduler:
 
 epochs: 61
 grad_clip: 1.0
-amp: false
+amp: true
 
 log_interval: 50
 eval_interval_epoch: 1
 ckpt_interval_epoch: 5
+amp_dtype: bfloat16  # 'bfloat16' (B 옵션, Blackwell native) / 'float16' (GradScaler 필요) / amp:false 면 무시
