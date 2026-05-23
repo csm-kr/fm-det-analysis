@@ -516,3 +516,124 @@ flowchart TD
 | 5 | loss_cls / l1 / giou | scalar (per layer) | × 6 layers 누적 |
 | 5 | **loss_total** | scalar | backward 시작점 |
 
+---
+
+## 3. RoIAlign — 입력 / 출력 정리
+
+DiffusionDet 의 매 DetectionHead 가 호출. **두 단계 구조**: 우리 wrapper 가 FPN multi-level 분기, 내부에서 torchvision 의 `roi_align` 을 level 별로 호출.
+
+### 3.1. 우리 wrapper `_multi_scale_roi_align` (decoder.py:158)
+
+```python
+def _multi_scale_roi_align(self, features, bboxes_xyxy):
+    ...
+    return out  # [B*N, 256, 7, 7]
+```
+
+**입력**:
+
+| 인자 | 타입 | shape | 의미 |
+|---|---|---|---|
+| `features` | **list[Tensor] of 4** | P2 `[B, 256, H/4, W/4]` <br/> P3 `[B, 256, H/8, W/8]` <br/> P4 `[B, 256, H/16, W/16]` <br/> P5 `[B, 256, H/32, W/32]` | backbone 의 4 FPN level (list) |
+| `bboxes_xyxy` | Tensor | `[B, N=500, 4]` | 현재 head 의 input box (sampling 또는 이전 head refined). xyxy in image px |
+
+**출력**:
+
+| 이름 | shape | 의미 |
+|---|---|---|
+| `out` | `[B·N=16000, 256, 7, 7]` | 모든 box 의 ROI feature. 어느 level 에서 pool 됐든 같은 shape 으로 통일 |
+
+### 3.2. 내부의 torchvision `roi_align` — level 1개씩
+
+우리 wrapper 가 level 별로 4번 호출. 한 번의 호출은:
+
+```python
+from torchvision.ops import roi_align
+pooled = roi_align(input, boxes, output_size, spatial_scale, sampling_ratio, aligned)
+```
+
+**입력**:
+
+| 인자 | 타입 | shape | 의미 |
+|---|---|---|---|
+| `input` | **single Tensor** | `[B, C=256, H_lvl, W_lvl]` | 한 level 의 feature (예: P2 만). list 아님 |
+| `boxes` | Tensor | `[K, 5]` <br/> `[batch_idx, x1, y1, x2, y2]` | 이 level 에 할당된 K 개 box. batch_idx 가 앞에 붙음 |
+| `output_size` | int / tuple | `(7, 7)` | 출력 ROI feature 의 spatial size |
+| `spatial_scale` | float | `1.0 / stride` | box 좌표 → feature 좌표 변환. P2=1/4, P3=1/8, P4=1/16, P5=1/32 |
+| `sampling_ratio` | int | `2` | bilinear sample 의 grid cell 당 sample 수 |
+| `aligned` | bool | `True` | half-pixel 보정. Detectron2 / DiffusionDet 동치 |
+
+**출력**:
+
+| 이름 | shape | 의미 |
+|---|---|---|
+| `pooled` | `[K, 256, 7, 7]` | K 개 box 의 ROI feature (이 level 에서만) |
+
+### 3.3. 한 화면 비교
+
+| | 입력 features | 입력 boxes | 출력 |
+|---|---|---|---|
+| **우리 wrapper** `_multi_scale_roi_align` | **list of 4** [P2, P3, P4, P5] | Tensor `[B, N, 4]` | `[B·N, 256, 7, 7]` |
+| **torchvision** `roi_align` | **single Tensor** [B, C, H, W] | Tensor `[K, 5]` (batch_idx 포함) | `[K, C, 7, 7]` |
+
+핵심 차이:
+- **wrapper 는 list 받음** (FPN multi-level 통합)
+- **torchvision 은 single tensor 만** — wrapper 가 level 별로 분리해서 4번 호출
+
+### 3.4. 내부 흐름 — level 별 loop
+
+```
+입력:
+  features    = [P2, P3, P4, P5]      ← list
+  bboxes_xyxy = [B=32, N=500, 4]      ← image px
+
+step 1 — flatten:
+  boxes_flat = bboxes_xyxy.reshape(-1, 4)         # [16000, 4]
+  batch_idx  = [0,...,0, 1,...,1, ..., 31,...,31] # [16000]
+
+step 2 — 각 box 의 level 결정 (FPN canonical assignment):
+  wh    = boxes_flat[:, 2:] - boxes_flat[:, :2]   # [16000, 2]
+  scale = sqrt(w * h)                              # box 의 한 변 평균 길이
+  k     = floor(4 + log2(scale / 224))             # raw 2~5
+  k     = clamp(k, 2, 5) - 2                       # → 0..3 (P2..P5 index)
+
+step 3 — rois 만들기:
+  rois = cat([batch_idx, boxes_flat], dim=1)       # [16000, 5]
+
+step 4 — level 별로 roi_align 호출:
+  out = zeros(16000, 256, 7, 7)
+  for lvl in range(4):
+      mask = (k == lvl)                            # 이 level 에 할당된 box index
+      rois_lvl = rois[mask]                        # [K_lvl, 5]
+      pooled = roi_align(
+          features[lvl],                           # single tensor [B, 256, Hi, Wi]
+          rois_lvl,
+          output_size=7,
+          spatial_scale=1.0 / fpn_strides[lvl],    # P2=1/4, P3=1/8, ...
+          sampling_ratio=2, aligned=True,
+      )                                            # → [K_lvl, 256, 7, 7]
+      out[mask] = pooled
+
+step 5 — 반환:
+  return out                                       # [16000, 256, 7, 7]
+```
+
+### 3.5. 핵심 인자 의미
+
+| 인자 | 의미 | 왜 그 값? |
+|---|---|---|
+| `output_size=7` | 모든 box → 7×7 grid 로 통일 | 다음 단계 (flatten + linear → 256-dim) 가 fixed 크기 input 필요 |
+| `spatial_scale=1/stride` | box 좌표 (image px) → feature 좌표 변환 | feature 는 stride 만큼 downsample 됐으므로 좌표 ÷ stride 해야 매칭 |
+| `sampling_ratio=2` | grid cell 당 2개 sample (bilinear) | smoothing — 좀 더 부드러운 ROI feature |
+| `aligned=True` | half-pixel offset 보정 | Detectron2 / DiffusionDet 본 repo 와 동치. False 면 1 pixel 정도 misalign |
+| `batch_idx` (boxes 의 첫 col) | 이 box 가 batch 의 몇 번째 image 에 속하는지 | torchvision 은 batch + box 를 한 tensor 로 표현 |
+
+### 3.6. 왜 두 단계 wrapper 인가
+
+torchvision 에 `MultiScaleRoIAlign` (FPN level assignment 자동) 클래스도 있지만, 우리가 직접 구현한 이유:
+
+- box → level assignment 식 명시 (`k = floor(4 + log2(sqrt(area)/224))`)
+- `list[Tensor]` interface 유지 (torchvision dict 보다 단순)
+- DiffusionDet 본 repo (`detectron2.modeling.poolers.ROIPooler`) 와 거의 1:1 매칭
+- 학습/이해 측면에서 명시적
+
