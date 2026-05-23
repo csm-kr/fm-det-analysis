@@ -92,9 +92,11 @@ def main(cfg: DictConfig) -> None:
                               weight_decay=float(optim_cfg.weight_decay))
 
     sch_cfg = cfg.train.scheduler
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(
+    multistep = torch.optim.lr_scheduler.MultiStepLR(
         optim, milestones=list(sch_cfg.milestones), gamma=float(sch_cfg.gamma),
     )
+    warmup_iters = int(sch_cfg.get("warmup_iters", 0))
+    warmup_factor = float(sch_cfg.get("warmup_factor", 1.0))
 
     amp_enabled = bool(cfg.train.amp) and device.type == "cuda"
     scaler = torch.amp.GradScaler("cuda", enabled=amp_enabled)
@@ -132,7 +134,18 @@ def main(cfg: DictConfig) -> None:
                 outputs = model(images, targets)
                 loss_dict = criterion(outputs, targets)
                 loss = loss_dict["loss_total"]
-            assert torch.isfinite(loss).all(), f"non-finite loss at epoch {epoch} iter {iter_count}"
+            if not torch.isfinite(loss).all():
+                # fp16 overflow 등 — scaler 가 처리 못 한 경우. step skip + 경고.
+                print(f"WARN: non-finite loss at epoch {epoch} iter {iter_count} (skipping)")
+                optim.zero_grad(set_to_none=True)
+                continue
+
+            # LR warmup (iter ≤ warmup_iters): linear from warmup_factor → 1.0
+            if warmup_iters > 0 and iter_count < warmup_iters:
+                alpha = iter_count / max(warmup_iters, 1)
+                w = warmup_factor + (1.0 - warmup_factor) * alpha
+                for pg in optim.param_groups:
+                    pg["lr"] = float(optim_cfg.lr) * w
 
             optim.zero_grad(set_to_none=True)
             scaler.scale(loss).backward()
@@ -164,15 +177,25 @@ def main(cfg: DictConfig) -> None:
             if iter_count % log_interval == 0 or iter_count == 1:
                 print(f"[epoch {epoch} iter {iter_count}] loss={last_loss:.4f} "
                       f"grad_norm={gnorm:.2f} lr={cur_lr:.2e}")
+            # epoch 내에서도 1000 iter 마다 last.pt 저장 (crash 시 손실 최소화)
+            if iter_count % 1000 == 0:
+                torch.save({
+                    "model": model.state_dict(),
+                    "optim": optim.state_dict(),
+                    "scheduler": multistep.state_dict(),
+                    "scaler": scaler.state_dict(),
+                    "epoch": epoch,
+                    "iter": iter_count,
+                }, ckpt_dir / "last.pt")
             if max_iters > 0 and iter_count >= max_iters:
                 finished = True
                 break
-        scheduler.step()
+        multistep.step()
         # ckpt — last.pt 매 epoch
         torch.save({
             "model": model.state_dict(),
             "optim": optim.state_dict(),
-            "scheduler": scheduler.state_dict(),
+            "scheduler": multistep.state_dict(),
             "scaler": scaler.state_dict(),
             "epoch": epoch,
             "iter": iter_count,
