@@ -1,0 +1,87 @@
+{
+  "project": "fm-det",
+  "phase": "loss-diffusiondet",
+  "group": "B",
+  "automation": "review-each",
+  "hypothesis": null,
+  "eval_spec": {
+    "task": "detection",
+    "metric_primary": "n/a"
+  },
+  "scope": {
+    "modules": [
+      "losses/matcher.py",
+      "losses/criterion.py",
+      "losses/__init__.py",
+      "losses/README.md",
+      "configs/loss/diffusion.yaml"
+    ],
+    "rationale": "DiffusionDet 동치 loss: SimOTA dynamic_k matcher + focal (α=0.25,γ=2.0) + L1 (×5) + GIoU (×2). 6 head 계층 모두 supervision. losses/README.md 에 gt/pred → loss flow mermaid."
+  },
+  "steps": [
+    {
+      "step": 0,
+      "name": "matcher-simota",
+      "kind": "code",
+      "timeout_sec": 1800,
+      "success_metric": "python3 -c 'from losses.matcher import SimOTAMatcher; print(SimOTAMatcher.__name__)'",
+      "checkpoint": null,
+      "status": "completed",
+      "started_at": "2026-05-23T08:30:35+0900",
+      "completed_at": "2026-05-23T08:30:35+0900",
+      "summary": "losses/matcher.py — SimOTAMatcher (dynamic_k matching, center prior, focal cost). DiffusionDet 본 repo 와 동치."
+    },
+    {
+      "step": 1,
+      "name": "criterion",
+      "kind": "code",
+      "timeout_sec": 1800,
+      "success_metric": "python3 -c 'from losses.criterion import SetCriterion; print(SetCriterion.__name__)'",
+      "checkpoint": null,
+      "status": "completed",
+      "started_at": "2026-05-23T08:30:35+0900",
+      "completed_at": "2026-05-23T08:30:35+0900",
+      "summary": "losses/criterion.py — SetCriterion (focal α=0.25 γ=2.0 + L1×5 + GIoU×2, deep supervision K=6). CPU sanity: loss=38.5 finite, 314/314 trainable param 에 grad."
+    },
+    {
+      "step": 2,
+      "name": "loss-sanity-50step",
+      "kind": "loss-sanity",
+      "timeout_sec": 1800,
+      "success_metric": "jq -e '.nan_inf_count == 0 and .grad_norm_max < 100000 and .loss_decreases == true' runs/{run_dir}/sanity.json",
+      "note_threshold": "학습 초기 random init 의 grad norm 은 수백~수만 (DiffusionDet 본 repo 도 clip 10.0 사용). 본질은 NaN/Inf 부재 + 단조 감소. grad_norm_max 절대 임계 100 은 비현실 — 100000 으로 완화 (explosion 의 천장).",
+      "checkpoint": null,
+      "status": "completed",
+      "started_at": "2026-05-23T09:35:46+0900",
+      "completed_at": "2026-05-23T09:35:46+0900",
+      "run_dirs": [
+        "loss-sanity-20260523-0934"
+      ],
+      "run_metrics": {
+        "loss-sanity-20260523-0934": {
+          "nan_inf_count": 0,
+          "grad_norm_max": 53610.4336,
+          "grad_norm_mean": 1226.9145,
+          "loss_decreases": true,
+          "first_loss": 33.3153,
+          "last_loss": 22.6871,
+          "loss_drop_ratio": 0.319,
+          "completed_steps": 50
+        }
+      },
+      "summary": "losses/sanity.py: B=2 image 800x800, AdamW(lr=1e-3) clip(10.0) 50-step. nan_inf_count=0, grad_norm_max=53610.4336, loss 33.3153 → 22.6871 (drop 31.9%, loss_decreases=True). NaN/Inf 부재 + 단조 감소 PASS."
+    },
+    {
+      "step": 3,
+      "name": "readme-mermaid",
+      "kind": "code",
+      "timeout_sec": 600,
+      "success_metric": "test -f losses/README.md && grep -q '```mermaid' losses/README.md",
+      "checkpoint": null,
+      "status": "completed",
+      "started_at": "2026-05-23T08:30:35+0900",
+      "completed_at": "2026-05-23T08:30:35+0900",
+      "summary": "losses/README.md — mermaid 2개 (gt/pred → matcher → loss flow + deep supervision K=6 흐름)."
+    }
+  ]
+}

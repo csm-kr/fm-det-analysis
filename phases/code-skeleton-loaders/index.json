@@ -1,0 +1,85 @@
+{
+  "project": "fm-det",
+  "phase": "code-skeleton-loaders",
+  "group": "B",
+  "automation": "review-each",
+  "hypothesis": null,
+  "eval_spec": {
+    "task": "detection",
+    "metric_primary": "n/a"
+  },
+  "scope": {
+    "modules": [
+      "datasets/transforms.py",
+      "datasets/coco/dataset.py",
+      "datasets/voc/dataset.py",
+      "configs/data/coco.yaml",
+      "configs/data/voc.yaml"
+    ],
+    "rationale": "PyTorch Dataset + DataLoader + transforms (DiffusionDet 동치: short 800-1333 + flip 0.5). Hydra configs/data/{coco,voc}.yaml — batch_size 등 재현성 자료."
+  },
+  "steps": [
+    {
+      "step": 0,
+      "name": "transforms-common",
+      "kind": "code",
+      "timeout_sec": 1800,
+      "max_retries": 3,
+      "success_metric": "test -f datasets/transforms.py && python3 -c 'from datasets.transforms import build_transforms; print(build_transforms.__name__)'",
+      "checkpoint": null,
+      "status": "completed",
+      "summary": "datasets/transforms.py — build_transforms(short_sides, max_size, flip_prob, mean, std, is_train) + Compose/RandomResize/RandomHorizontalFlip/ToTensor/Normalize + collate_fn (32-multiple zero-padding). torchvision.transforms.functional 사용, detectron2 의존성 0. AC PASS (640x480 PIL → tensor [3,800,1067], boxes shape [1,4]).",
+      "started_at": "2026-05-22T07:13:42+0900",
+      "completed_at": "2026-05-22T07:15:13+0900"
+    },
+    {
+      "step": 1,
+      "name": "coco-dataset-loader",
+      "kind": "data-sanity",
+      "timeout_sec": 1800,
+      "max_retries": 3,
+      "success_metric": "jq -e '.sanity_pass == true and .batch_shape != null' runs/{run_dir}/sanity.json",
+      "checkpoint": null,
+      "status": "completed",
+      "summary": "datasets/coco/{dataset.py,sanity_loader.py} — CocoDetection(ann_file, image_dir, transforms) + cat_id(1-90)→cat_idx(0-79) 매핑 + drop_empty(background-only 제외) + build_coco_loader(cfg, split, seed). sanity_loader: OmegaConf 로 configs/data/coco.yaml 로드 + batch_size 오버라이드 + 1-batch 검증. AC PASS: batch_shape=[2,3,800,1248], num_targets_per_image=[19,14], cat_idx_range=[0,72], sanity_pass=true. jq AC 통과 (재재검증 2026-05-22).",
+      "started_at": "2026-05-22T07:15:15+0900",
+      "completed_at": "2026-05-22T07:22:42+0900",
+      "run_dirs": [
+        "code-skeleton-loaders-coco-20260521-222054",
+        "code-skeleton-loaders-coco-20260521-222242"
+      ]
+    },
+    {
+      "step": 2,
+      "name": "voc-dataset-loader",
+      "kind": "data-sanity",
+      "timeout_sec": 1800,
+      "max_retries": 3,
+      "success_metric": "jq -e '.sanity_pass == true and .batch_shape != null' runs/{run_dir}/sanity.json",
+      "checkpoint": null,
+      "status": "completed",
+      "summary": "datasets/voc/{dataset.py,sanity_loader.py} — VOCDetection(devkit_root, split, transforms, drop_difficult, drop_empty) + VOC_CLASSES→0-19 인덱싱 + difficult=1 학습 제외 + build_voc_loader(cfg, split='train'|'eval', seed). sanity_loader: OmegaConf 로 configs/data/voc.yaml 로드 + named split(voc07-trainval/voc07-test/voc12-trainval/voc-trainval-combined) → cfg.train_split/eval_split 오버라이드. AC PASS: batch_shape=[2,3,800,1088], num_targets_per_image=[1,1], cat_idx_range=[3,18], split=voc07-trainval, sanity_pass=true. jq AC 통과 (재재재검증 2026-05-22).",
+      "started_at": "2026-05-22T07:23:52+0900",
+      "completed_at": "2026-05-22T07:32:32+0900",
+      "run_dirs": [
+        "code-skeleton-loaders-voc-20260521-223014",
+        "code-skeleton-loaders-voc-20260521-223232"
+      ]
+    },
+    {
+      "step": 3,
+      "name": "hydra-configs",
+      "kind": "code",
+      "timeout_sec": 600,
+      "max_retries": 3,
+      "success_metric": "test -f configs/data/coco.yaml && test -f configs/data/voc.yaml && python3 -c 'from omegaconf import OmegaConf; OmegaConf.load(\"configs/data/coco.yaml\")'",
+      "checkpoint": null,
+      "status": "completed",
+      "summary": "configs/{train,eval}.yaml + configs/data/{coco,voc}.yaml — Hydra defaults 합성 검증 통과. coco.yaml: batch_size=16, num_workers=8, transforms.train.short_sides=[480..800], max_size=1333, flip_prob=0.5; eval.short_sides=[800]. voc.yaml: 동일 transforms + train_split=voc-trainval-combined / eval_split=voc07-test. batch_size 는 configs/data/{coco,voc}.yaml 한 곳에서만 결정 (재현성 자리). AC PASS: OmegaConf.load OK + hydra compose(train, data=coco) → batch_size=16 / model=diffusiondet / loss=diffusion_set_loss, data=voc override → num_classes=20.",
+      "started_at": "2026-05-22T07:33:57+0900",
+      "completed_at": "2026-05-22T07:37:07+0900"
+    }
+  ],
+  "created_at": "2026-05-22T07:05:09+0900",
+  "completed_at": "2026-05-22T07:37:07+0900"
+}

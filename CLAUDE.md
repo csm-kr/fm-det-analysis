@@ -42,6 +42,7 @@ DiffusionDet 을 detectron2 없이 재구현하고, diffusion → flow matching 
 
 - **M0 — 부트스트래핑 + docs + 컨테이너 환경** (2026-05-21): docs 트라이앵글(PRD/ARCH/ADR) + EXPERIMENTS 진단 카탈로그 + env_docker/{Dockerfile, compose, entrypoint} + Makefile + 정본 hook 2개.
 - **M1 — Pre-P0 데이터 sanity + 인프라 정리** (2026-05-21): `data-sanity-coco` (val) phase 완료 (CP-1 approved) — 다운(`wget` + zipfile) / 분석(pycocotools) / 시각화(matplotlib + Pillow, 4종) / report 묶음. 인프라 보강 — `pyproject.toml` (R-05) + `.gitignore` ai-ml (R-06) + Dockerfile `jq unzip` 추가 (I-05 rebuild 대기). 모듈화 — `datasets/coco/{download,sanity,visualize,report}` sub 모듈 패턴 확립 (VOC 동일 패턴 예정). [phases/data-sanity-coco/](./phases/data-sanity-coco/) · [docs/ISSUE.md](./docs/ISSUE.md).
+- **M2 — 전체 데이터셋 sanity (COCO val/train + VOC 07/12) + Hydra base + Dataset 클래스** (2026-05-21): 3 phase 완료 — `data-sanity-coco-train` (118,287 / 860,001 ann), `data-sanity-voc` (16551 trainval + 4952 test, 47,223 ann, CP-1 approved). `configs/` Hydra 트리 (train/eval/data/model/loss/train/experiment) — DiffusionDet 동치 (lr=2.5e-5, epochs=61, batch=16, AdamW). `datasets/transforms.py` + `datasets/coco/dataset.py` + `datasets/voc/dataset.py` PyTorch Dataset + DataLoader 구현 — short 800-1333 resize + flip 0.5 동치. COCO/VOC 1-batch loading sanity PASS. 그룹 B (model/loss/eval/entrypoints) phase 6개 설계 완료. [phases/index.json](./phases/index.json).
 
 ## LLM 협업 원칙
 **모든 코딩 작업은 [LLM_GUIDE.md](./LLM_GUIDE.md) 의 4원칙을 따른다**:

@@ -44,6 +44,8 @@ services:
       # 빌드/다운로드 캐시 (named volume — 호스트 더럽히지 않고 재빌드 절약)
       - pip-cache:/home/docker_user/.cache/pip
       - hf-cache:/home/docker_user/.cache/huggingface
+      # torch.hub (torchvision pretrained 가중치 — ResNet50 등). 영구화 → 컨테이너 재시작 시 재다운 방지.
+      - torch-cache:/home/docker_user/.cache/torch
 
       # data/ 와 runs/ 는 위 `..` bind 에 자동 포함됨 — 별도 마운트 불필요.
       # (대용량이라 named volume 으로 격리하고 싶다면 .gitignore 와 함께 호스트 디렉터리 명시적 마운트)
@@ -73,3 +75,4 @@ services:
 volumes:
   pip-cache:
   hf-cache:
+  torch-cache:

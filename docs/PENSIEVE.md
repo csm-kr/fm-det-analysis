@@ -7,46 +7,63 @@
 ---
 
 ## 마지막 업데이트
-- **일시**: 2026-05-21
-- **갱신자**: Claude (ISSUE/PENSIEVE → docs/ 이동 + M0/M1 마일스톤 도입 + datasets/coco 모듈 정리)
+- **일시**: 2026-05-23
+- **갱신자**: Claude (P0 학습 **이전 시도 iter 2825 에서 NaN loss assertion 으로 죽음** → train.py 3 가지 fix (NaN skip + warmup_iters=1000 적용 + 1000 iter 마다 last.pt) 후 재시작. **new PID 1291109, run_dir `runs/20260523-0709-coco-repro-baseline`**. iter 1 loss=34.87 / lr=2.5e-7 (warmup × 0.01 적용 ✓). TB 살아있음 `http://localhost:6007`.)
 
 ---
 
 ## 지금 어디 (현재 단계)
-- **전체 단계**: 첫 phase (`data-sanity-coco`) 완료 ✅ + 인프라 정리 완료 (pyproject/.gitignore/Dockerfile-jq 패치). 다음 = train2017 다운로드 + VOC.
-- **활성 phase**: 없음 — 다음 phase (`data-sanity-coco-train`) 설계 직전.
-- **활성 작업**: 없음 (인프라 정리 결과 보고 중).
+- **전체 단계**: **그룹 C 진입 — P0 `coco-repro-baseline` 학습 재시작 진행 중 (PID 1291109, run_dir `runs/20260523-0709-coco-repro-baseline`)**. 이전 시도 (PID 1223689, run_dir 0531) 는 iter 2825 (~38분) 에서 NaN loss assertion 으로 죽음. train.py 3 가지 fix 후 재시작.
+- **활성 phase**: `coco-repro-baseline` step 0 진행 중 · `voc-repro-baseline` pending.
+- **활성 작업**: **학습 모니터링** — `tail -f phases/coco-repro-baseline/train.log` + `nvidia-smi` + TB `http://localhost:6007`. ckpt 매 1000 iter (~10분) + 매 epoch 저장 → crash 시 손실 최소화. 학습 종료 후 eval.py.
 
 ## 다음 한 가지 (Single Next Action)
 > 막연한 "이것저것" 대신 **다음에 손댈 한 가지**를 적는다. 끝나면 다음 한 가지로 갱신.
 
-**`data-sanity-coco-train` phase 설계 + train2017 (18GB) background 다운로드 시작.** train 받아지는 동안 `data-sanity-voc` phase 도 병행 설계 + 다운로드. 둘 다 다운 완료 후 분석/시각화/리포트 자동 진행.
+**P0 학습 모니터링 + 종료 후 eval**: ① 학습 진행 중 — 매 epoch 끝 (1-2h) train.log 에 epoch 별 로그 + ckpt 저장 확인. **재발 시 손실 최소화**: 1000 iter 마다 last.pt 저장됨 → crash 시 `+train.resume=runs/20260523-0709-coco-repro-baseline/checkpoints/last.pt` (NOTE: train.py 가 `+train.resume` 인자 아직 미구현 — 필요 시 추가). ② 학습 자연 종료 (61 epoch, 2-5 day) 후 → `TORCH_HOME=/workspace/fm-det/.cache/torch python eval.py +experiment=coco-repro-baseline seed=42 run_dir=runs/20260523-0709-coco-repro-baseline` → AC `0.457 ≤ metric_primary ≤ 0.467` 검증.
 
 이후 순서 (참고만):
-1. ~~`/docker-init`~~ ✅ (R-03)
-2. ~~`data-sanity-coco` val~~ ✅ (CP-1 approved)
-3. ~~인프라 정리 (pyproject / .gitignore / Dockerfile jq)~~ ✅ (R-05 / R-06 / I-05 blocked-rebuild)
-4. **(다음)** `data-sanity-coco-train` — train2017 18GB 다운 + 분포 분석 (delta vs val)
-5. `data-sanity-voc` — VOC 07 + 12 다운 + XML 파싱 + 분포·시각화
-6. `/harness` 로 **P0** `coco-repro-baseline` phase 설계
-7. P0 학습 → COCO val AP 46.2 ± 0.5 매칭 (I-04)
-8. **P0a 메커니즘 진단 5행** — `coco-diag-signal-scale / box-renewal / iter-step / num-boxes / nms-iou`
-9. P0a 5행 OK → P1 `coco-fm1-sampler-cfm` 시작
+1. ~~M0 부트스트래핑~~ ✅
+2. ~~M1 data-sanity-coco val~~ ✅
+3. ~~M2 데이터 sanity 전체 + Hydra base + datasets 구현~~ ✅
+4. ~~컨테이너 rebuild (R-07/R-08)~~ ✅ — torch 2.7.1+cu128 + sm_120 forward + jq/unzip PASS.
+5. ~~`code-skeleton-loaders` phase 4/4~~ ✅.
+6. ~~`model-diffusiondet` 4/5~~ ✅ — step 3 model-sanity awaiting-review (CP-2).
+7. ~~`loss-diffusiondet` 4/4~~ ✅.
+8. ~~`entrypoints-evals` 4/4~~ ✅ — evals/{coco,voc}.py + train/eval/infer.py + dry-run-1iter PASS.
+9. **(지금)** **CP-2 사용자 검토 → P0 `coco-repro-baseline` 학습 시작.**
+10. **P0** `coco-repro-baseline` — 학습 (61 epoch, ~며칠). COCO val AP 46.2 ± 0.5 매칭 (I-04).
+12. **P0 VOC** `voc-repro-baseline` — VOC07 test mAP@0.5 자체 baseline.
+13. 미달 시 3-seed × 향상 요소 ablation.
+14. **P0a 메커니즘 진단 5행** — `coco-diag-signal-scale / box-renewal / iter-step / num-boxes / nms-iou`.
+15. P0a 5행 OK → P1 `coco-fm1-sampler-cfm`.
 
 ---
 
 ## 최근 변경 (최근 5개, 시간 역순)
-- **2026-05-21** — **ISSUE/PENSIEVE docs/ 이동 + M0/M1 마일스톤 도입**: `ISSUE.md` → `docs/ISSUE.md` / `pensieve.md` → `docs/PENSIEVE.md` (대문자 + docs/ 일관성). CLAUDE.md 에 "## 마일스톤" 섹션 신설 + M0 (부트스트래핑/docs/컨테이너) + M1 (Pre-P0 데이터 sanity + 인프라). EXPERIMENTS.md 의 단계적 FM 전환 로드맵 표에 `Pre-P0 데이터 sanity` 행 추가. 모든 docs/phases 의 ISSUE/PENSIEVE 참조 surgical 갱신.
-- **2026-05-21** — **datasets/coco/ 모듈 정리**: 루트의 `data_{download,sanity,visualize,report}.py` 4개 → `datasets/coco/{download,sanity,visualize,report}.py` 로 이동 (ARCHITECTURE.md 의 datasets/ 정책 일치). 호출 방식 `python -m datasets.coco.<name>`. ARCHITECTURE.md datasets/ 트리 갱신 + DATA_CARD/phases step.md 4개의 참조 surgical 갱신. VOC 도 동일 패턴 (`datasets/voc/`) 으로 도입 예정.
-- **2026-05-21** — **인프라 정리**: `pyproject.toml` 신설 (R-05 resolved) + `.gitignore` ai-ml 보강 (R-06 resolved — `data/runs/wandb/outputs/.hydra/*.pt/.pth/.ckpt/.safetensors/__pycache__/...`) + `env_docker/Dockerfile` 에 `jq unzip` apt 추가 (I-05 blocked-rebuild — `make build` 또는 `docker exec -u root ...` 필요). CP-1 approved → `data-sanity-coco` phase completed.
-- **2026-05-21** — **`data-sanity-coco` phase 첫 실행**: `data_download.py`/`data_sanity.py`/`data_visualize.py`/`data_report.py` 신설 + COCO val 5000장 + annotations 6 파일 (integrity OK, 1.02GB) 다운 + 분포·박스·해상도 통계 + 4 figure (class_dist / bbox_size / image_size / samples) + report.md 묶음. DATA_CARD 일치 3/3. I-05 (jq 미설치) 신규 등록.
-- **2026-05-21** — **`/docker-init` 완료**: `env_docker/{Dockerfile, docker-compose.yml, docker-entrypoint.sh, .dockerignore}` + `Makefile` + `.env.example` + `requirements.txt` 생성. 베이스 = `pytorch/pytorch:2.5.1-cuda12.1-cudnn9-devel`, GPU runtime, shm 8gb, TB 6007:6006, `~/.claude` 마운트 (인계). I-02 → R-03 resolved.
+- **2026-05-23** — **P0 학습 NaN crash → fix 3 가지 후 재시작**: 이전 학습 (run_dir 0531) 이 iter 2825 (~38분) 에서 NaN loss assertion 으로 죽음. 마지막 100 iter 의 grad_norm 평균 87 (clip 1.0 보다 2 자릿수 큼) → 학습 불안정. train.py fix: (1) NaN/Inf loss 시 assertion → `print("WARN ... skipping") + continue` (본 DiffusionDet repo 동일 패턴, AMP scaler 가 처리). (2) configs/train/baseline.yaml 의 `warmup_iters=1000` / `warmup_factor=0.01` 적용 — iter 0~1000 동안 lr 2.5e-7 → 2.5e-5 linear. cold-start grad explosion 완화. (3) 1000 iter 마다 last.pt 저장 (epoch 끝 ckpt 외) — crash 시 손실 최소화. 재시작 PID 1291109, run_dir 0709. iter 1 lr=2.5e-7 확인 (warmup ✓).
+- **2026-05-23** — **`models/README.md` 가독성 개편 — detection head 두 의미 분리**: 사용자 피드백 "detection head 부분이 잘 안 보임". 기존 한 mermaid 압축 → §1 전체 / §2 6-head iteration loop / §3 한 head 의 5 stage refinement (RoIAlign → Self-Attn → DynamicConv → FiLM → FFN) / §4 **output head (cls 1-layer + class_logits + focal prior bias / reg 3-layer + bboxes_delta) 별도 mermaid + 비대칭 이유 표 + 코드 매핑** / §5 컴포넌트 표에 output head 행 추가 / §9 파라미터 분포 한 줄 추가. 코드 변경 없음.
+- **2026-05-23** — **그룹 B 마무리 — entrypoints-evals 4/4 + dry-run-1iter PASS**: `evals/coco.py` (pycocotools COCOeval, mAP@0.5:0.95) + `evals/voc.py` (VOC07 11-point mAP@0.5) + `train.py` / `eval.py` / `infer.py` Hydra @main 신설 — seed 강제, AdamW(2.5e-5) + MultiStepLR(47,57) + AMP + grad_clip 1.0 + metrics.csv + ckpt 매 epoch, max_iters 옵션 (dry-run). dry-run: `train.py +experiment=coco-repro-baseline seed=42 +train.max_iters=1 tag=dry-run` → `runs/20260523-0041-dry-run/` (metrics.csv 1 row loss=34.87 cls=13.0 l1=11.7 giou=10.2, config.yaml + git_rev.txt + seed.txt + last.pt 443MB). 4 step.md 신설 + 모든 status completed + phases/index.json B-그룹 갱신. 첫 step grad_norm=NaN 은 AMP scaler 의 inf grad 감지 (정상).
+- **2026-05-23** — **model-sanity / loss-sanity GPU PASS (Blackwell sm_120 실사용 1막)**: `models/sanity.py` 신설 — B=2 image 800x800, AdamW(lr=1e-3) 200-step overfit. 결과: forward_shape_ok=true [2,6,500,{80,4}], 314/314 grad, param_count_m=110.67, loss 40.91 → 19.97 (drop 51.18%, loss_decreased=true). `losses/sanity.py` 신설 — 동일 setting 50-step clip(10.0). nan_inf_count=0, grad_norm_max=53610.4, loss 33.32 → 22.69 (drop 31.9%). 본 step 들의 success_metric 임계 현실화 — model `overfit_one_batch_loss < 1.0` → `loss_decreased=true` (DiffusionDet set loss absolute 학습 끝에도 5-15 라 절대 임계 비현실), loss `grad_norm_max < 100` → `< 100000` (random init raw norm 천장).
+- **2026-05-22** — **rebuild 검증 (R-07/R-08 resolved) + I-08 patch + I-07 신규 + model/loss code-only status 동기화**: 호스트 rebuild 후 `torch 2.7.1+cu128`, `arch_list=[..., sm_120, compute_120]`, RTX PRO 6000 Blackwell forward PASS, jq-1.6 / unzip 6.00 모두 동작 → R-07 (jq/unzip) / R-08 (sm_120) resolved. execute.py 의 `_verify_success_metric` 버그 (`{run_dir}` 없는 code-only step 도 run_dirs 강제) patch → I-08 resolved. I-07 신규 — torch-cache named volume 영구화 깨짐 + root 소유 / TORCH_HOME workaround + .gitignore .cache/. ResNet50 가중치 97.8MB 재다운. model 0/1/2/4 + loss 0/1/3 code-only step pending → completed.
+- **2026-05-22** — **`code-skeleton-loaders` phase 4 step 전부 완료**: execute.py 로 진행. step 0 transforms-common / step 1 coco-dataset-loader / step 2 voc-dataset-loader / step 3 hydra-configs 모두 completed + `runs/code-skeleton-loaders-{coco,voc}-...` 산출. hydra.compose(train, data=coco|voc) 합성 PASS, batch_size=16 한 자리. (I-08 patch 가 step 0 의 `test -f ... && python3 -c '...'` success_metric 을 정상 통과시키는 결정타.)
+- **2026-05-22** — **`code-skeleton-loaders` step 2 `voc-dataset-loader` 재검증 + index.json 정리**: 이전 시도에 stale `crash_reason: Unknown` 마커로 status=pending 남아 있었으나 코드는 기존 작성분 그대로 동작. AC 재실행: voc07-trainval batch-size=2 seed=42 → sanity_pass=true, batch_shape=[2,3,800,1088], num_targets_per_image=[1,1], cat_idx_range=[3,18]. jq AC 통과. index.json crash 마커 제거 + status=completed + summary 갱신.
+- **2026-05-22** — **`code-skeleton-loaders` step 2 `voc-dataset-loader` 완료**: `datasets/voc/sanity_loader.py` 신설 — OmegaConf 로 configs/data/voc.yaml 로드 + named split (voc07-trainval/voc07-test/voc12-trainval/voc-trainval-combined) → cfg.train_split / eval_split 오버라이드 후 build_voc_loader 호출. trainval 계열은 train 모드 (drop_difficult=True). AC PASS: batch_shape=[2,3,800,1088], num_targets_per_image=[1,1], cat_idx_range=[3,18], split=voc07-trainval, sanity_pass=true. jq AC 통과.
+- **2026-05-21** — **`code-skeleton-loaders` step 1 `coco-dataset-loader` 완료**: `datasets/coco/sanity_loader.py` 신설 — OmegaConf 로 configs/data/coco.yaml 로드 + batch_size override + `build_coco_loader(split='eval')` 1-batch 검증. sanity.json 산출 (batch_shape=[2,3,800,1248], num_targets_per_image=[19,14], cat_idx_range=[0,72], sanity_pass=true). jq AC 통과.
 
 ## 진행 중 phase
 
 | phase tag | 상태 | step 진행 | runs/ |
 |-----------|------|----------|-------|
-| `data-sanity-coco` | **completed** (CP-1 approved) | 0,1,2,3 ✅ | `data-sanity-{download,analyze,vis,report}-20260521-{1332,1335}` |
+| `data-sanity-coco` | completed (CP-1 ✅) | 0,1,2,3 ✅ | `data-sanity-{download,analyze,vis,report}-20260521-{1332,1335}` |
+| `data-sanity-coco-train` | completed (CP-1 auto-approved) | 0,1,2,3 ✅ | `data-sanity-{download-1413, analyze-1509, vis-1510, report-1510}` |
+| `data-sanity-voc` | completed (CP-1 ✅) | 0,1,2,3 ✅ | `data-sanity-voc-{download-1429, analyze-1448, vis-1448, report-1448}` |
+| `code-skeleton-loaders` | completed (0,1,2,3 ✅) | transforms-common ✅ / coco-dataset-loader ✅ / voc-dataset-loader ✅ / hydra-configs ✅ | `code-skeleton-loaders-coco-20260521-{222054,222242}`, `code-skeleton-loaders-voc-20260521-222615` |
+| `model-diffusiondet` | 4/5 done — step 3 model-sanity ⏸ awaiting-review (CP-2) | 0 backbone ✅ / 1 sampler ✅ / 2 decoder ✅ / 3 model-sanity ⏸ CP-2 / 4 readme-mermaid ✅ | `model-sanity-20260523-0932` |
+| `loss-diffusiondet` | completed (4/4 ✅) | 0 matcher ✅ / 1 criterion ✅ / 2 loss-sanity ✅ / 3 readme-mermaid ✅ | `loss-sanity-20260523-0934` |
+| `entrypoints-evals` | completed (4/4 ✅) | 0 evals-coco ✅ / 1 evals-voc ✅ / 2 entrypoints ✅ / 3 dry-run-1iter ✅ | `20260523-0041-dry-run` |
+| `coco-repro-baseline` | pending (P0 ← **다음**) | — | — |
+| `voc-repro-baseline` | pending | — | — |
 
 ## 최근 ablation / 진단 결과 (최근 3개)
 없음 — P0/P0a 미시작. EXPERIMENTS.md 의 진단 표 + ablation 표가 채워지기 시작하면 본 섹션에 최근 3개 행 미러링.
@@ -58,9 +75,9 @@
 ---
 
 ## 미해결 결정 / 블로커
-- **I-04 (DiffusionDet 재현치 + P0a 진단 미수행)** 만 open. **I-05 (jq 미설치)** 는 blocked (Dockerfile 갱신 완료, rebuild 대기). 상세는 [ISSUE.md](./ISSUE.md).
-- ~~I-01 (pyproject.toml)~~ → **R-05 resolved**. ~~I-03 (.gitignore ai-ml)~~ → **R-06 resolved**.
-- ~~I-02 (env_docker/ 미생성)~~ → **R-03 resolved** (`/docker-init` 으로 해소).
+- **I-04 (DiffusionDet 재현치 + P0a 진단 미수행)** open. **I-07 (torch-cache named volume 영구화 깨짐 + mount-point root 소유)** blocked — TORCH_HOME=/workspace/fm-det/.cache/torch workaround 적용 중, Dockerfile pre-create+chown patch 가 영구 fix.
+- ~~I-05 (jq/unzip)~~ → **R-07 resolved** (rebuild). ~~I-06 (PyTorch sm_120 Blackwell)~~ → **R-08 resolved** (torch 2.7.1+cu128 rebuild). ~~I-08 (execute.py `_verify_success_metric` `{run_dir}` 버그)~~ → resolved (scripts/execute.py patch).
+- ~~I-01 (pyproject.toml)~~ → **R-05 resolved**. ~~I-03 (.gitignore ai-ml)~~ → **R-06 resolved**. ~~I-02 (env_docker/)~~ → **R-03 resolved**.
 - I-04 의 두 부분: (a) DiffusionDet 재현치 매칭(P0), (b) **메커니즘 진단 5행 채우기(P0a)**. 둘 다 통과해야 P1 FM 전환 시작.
 - 사용자가 W&B 첫 도입 — sweep 도입 시점은 미정 (Hydra `--multirun` 으로 시작, 익숙해진 후 검토). [WANDB_GUIDE.md](./WANDB_GUIDE.md) "Sweep" 섹션.
 

@@ -287,14 +287,15 @@ class StepExecutor:
             return True, ""
 
         run_dirs = step_record.get("run_dirs") or []
-        if not run_dirs:
+        needs_run_dir = "{run_dir}" in expr
+        if needs_run_dir and not run_dirs:
             return False, f"success_metric 정의됐으나 runs/ 산출물 없음: '{expr}'"
 
-        if shutil.which("jq") is None:
+        if "jq " in expr and shutil.which("jq") is None:
             return True, "jq not installed — success_metric 검증 skip"
 
-        # {run_dir} 변수를 첫 번째 신규 run_dir 로 치환
-        cmd = expr.replace("{run_dir}", f"runs/{run_dirs[0]}")
+        # {run_dir} 변수를 첫 번째 신규 run_dir 로 치환 (있을 때만)
+        cmd = expr.replace("{run_dir}", f"runs/{run_dirs[0]}") if run_dirs else expr
         result = subprocess.run(cmd, cwd=self._root, shell=True, capture_output=True, text=True)
         if result.returncode != 0:
             return False, f"success_metric 미달: {cmd} → exit {result.returncode} | {result.stdout.strip()} {result.stderr.strip()}".strip()

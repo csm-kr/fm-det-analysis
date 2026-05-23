@@ -1,0 +1,17 @@
+# @package _global_
+defaults:
+  - override /data: voc
+  - override /model: diffusiondet
+  - override /loss: diffusion
+  - override /train: baseline
+
+tag: voc-repro-baseline
+seed: 42
+
+data:
+  batch_size: 16
+
+train:
+  epochs: 60
+  scheduler:
+    milestones: [47, 57]

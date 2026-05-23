@@ -1,0 +1,9 @@
+# @package _global_
+defaults:
+  - override /data: coco
+  - override /model: diffusiondet
+  - override /loss: diffusion
+  - override /train: baseline
+
+tag: coco-repro-baseline
+seed: 42

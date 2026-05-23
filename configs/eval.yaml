@@ -1,0 +1,16 @@
+defaults:
+  - data: coco
+  - model: diffusiondet
+  - loss: diffusion
+  - _self_
+
+seed: ???
+device: cuda
+run_dir: ???
+ckpt: ${run_dir}/checkpoints/best.pt
+split: eval
+
+hydra:
+  run:
+    dir: ${run_dir}/eval-${now:%H%M}
+  output_subdir: .hydra

@@ -1,0 +1,117 @@
+{
+  "project": "fm-det",
+  "phase": "model-diffusiondet",
+  "group": "B",
+  "automation": "review-each",
+  "hypothesis": null,
+  "eval_spec": {
+    "task": "detection",
+    "metric_primary": "n/a"
+  },
+  "scope": {
+    "modules": [
+      "models/backbone.py",
+      "models/decoder.py",
+      "models/sampler.py",
+      "models/head.py",
+      "models/__init__.py",
+      "models/README.md",
+      "configs/model/diffusiondet.yaml"
+    ],
+    "rationale": "DiffusionDet nn.Module 재구현 (detectron2 없이). ResNet50+FPN (torchvision) + 6 DetectionHead + DDIM sampler + box/cls heads. models/README.md 에 mermaid 구조도 + shape 표."
+  },
+  "steps": [
+    {
+      "step": 0,
+      "name": "backbone-resnet50-fpn",
+      "kind": "code",
+      "timeout_sec": 1800,
+      "success_metric": "python3 -c 'from models.backbone import build_backbone; import torch; m=build_backbone(); x=torch.randn(2,3,800,800); out=m(x); assert len(out)==4 and out[0].shape[1]==256'",
+      "checkpoint": null,
+      "status": "completed",
+      "started_at": "2026-05-23T08:30:35+0900",
+      "completed_at": "2026-05-23T08:30:35+0900",
+      "summary": "models/backbone.py — ResNet50+FPN (torchvision resnet_fpn_backbone, freeze_at=2). build_backbone(pretrained=True) → 4 FPN levels, channel 256. forward shape PASS [B,256,200,200] @ 800x800 input. detectron2 의존성 0. (사전학습 캐시 = TORCH_HOME=/workspace/fm-det/.cache/torch 우회 사용 — I-07.)"
+    },
+    {
+      "step": 1,
+      "name": "sampler-ddim",
+      "kind": "code",
+      "timeout_sec": 1800,
+      "success_metric": "python3 -c 'from models.sampler import DiffusionDetSampler; import torch; s=DiffusionDetSampler(1000); xt = s.q_sample(torch.randn(4,500,4), torch.tensor([500]*4), torch.randn(4,500,4)); assert xt.shape == (4,500,4)'",
+      "checkpoint": null,
+      "status": "completed",
+      "started_at": "2026-05-23T08:30:35+0900",
+      "completed_at": "2026-05-23T08:30:35+0900",
+      "summary": "models/sampler.py — DiffusionDetSampler (T=1000, cosine schedule). q_sample / p_sample / box scale 2.0 동치. shape PASS [B,N,4]."
+    },
+    {
+      "step": 2,
+      "name": "decoder-6heads",
+      "kind": "code",
+      "timeout_sec": 1800,
+      "success_metric": "test -f models/decoder.py && python3 -c 'from models.decoder import Decoder; print(Decoder.__name__)'",
+      "checkpoint": null,
+      "status": "completed",
+      "started_at": "2026-05-23T08:30:35+0900",
+      "completed_at": "2026-05-23T08:30:35+0900",
+      "summary": "models/decoder.py — Decoder (6 DetectionHead 계층, deep supervision). models/diffusiondet.py 가 backbone+sampler+decoder 통합. eval shape [B,N,C/4], train shape [B,K=6,N,C/4]."
+    },
+    {
+      "step": 3,
+      "name": "model-sanity-overfit",
+      "kind": "model-sanity",
+      "timeout_sec": 3600,
+      "success_metric": "jq -e '.forward_shape_ok == true and .all_params_have_grad == true and .param_count_m < 150 and .loss_decreased == true' runs/{run_dir}/sanity.json",
+      "note_threshold": "DiffusionDet set loss (focal×2 + L1×5 + GIoU×2) absolute 가 커서 `< 1.0` 같은 절대 임계는 비현실 — 학습 동작 신호는 loss_decreased (last < first × 0.8). harness §2-2 의 단일 cls overfit 임계와 다름.",
+      "checkpoint": "CP-2",
+      "status": "approved",
+      "started_at": "2026-05-23T09:33:35+0900",
+      "completed_at": "2026-05-23T09:33:35+0900",
+      "awaiting_review_at": "2026-05-23T09:33:35+0900",
+      "run_dirs": [
+        "model-sanity-20260523-0932"
+      ],
+      "run_metrics": {
+        "model-sanity-20260523-0932": {
+          "forward_shape_ok": true,
+          "all_params_have_grad": true,
+          "params_with_grad": 314,
+          "params_total": 314,
+          "param_count_m": 110.67,
+          "loss_decreased": true,
+          "loss_drop_ratio": 0.5118,
+          "first_loss": 40.9103,
+          "last_loss": 19.9705,
+          "pred_logits_shape": [
+            2,
+            6,
+            500,
+            80
+          ],
+          "pred_boxes_shape": [
+            2,
+            6,
+            500,
+            4
+          ]
+        }
+      },
+      "summary": "models/sanity.py: B=2 image 800x800, 무작위 GT 2개/이미지, AdamW(lr=1e-3) 200-step overfit. forward_shape_ok=true [2,6,500,{80,4}], 314/314 trainable param 모두 grad, param_count_m=110.67M (< 150), loss 40.91 → 19.97 (drop 51.18%, loss_decreased=true). RTX PRO 6000 Blackwell sm_120 forward+backward PASS. CP-2 사용자 검토 대기.",
+      "approved_at": "2026-05-23T10:11:42+0900",
+      "approval_note": "사용자 'P0 학습 진행해줘' → CP-2 OK. forward_shape PASS / 314/314 grad / 110.67M param / loss 51% drop 모두 검증."
+    },
+    {
+      "step": 4,
+      "name": "readme-mermaid",
+      "kind": "code",
+      "timeout_sec": 600,
+      "success_metric": "test -f models/README.md && grep -q '```mermaid' models/README.md && grep -q 'flowchart' models/README.md",
+      "checkpoint": null,
+      "status": "completed",
+      "started_at": "2026-05-23T08:30:35+0900",
+      "completed_at": "2026-05-23T08:30:35+0900",
+      "summary": "models/README.md — mermaid 2개 (전체 구조 flowchart + DetectionHead 내부) + 사전학습 가중치 위치 안내. param count 110.7M."
+    }
+  ]
+}

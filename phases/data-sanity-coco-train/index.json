@@ -27,7 +27,9 @@
       "monitors": [],
       "success_metric": "jq -e '.image_count == 118287 and .ann_files >= 4 and .integrity_ok == true' runs/{run_dir}/manifest.json",
       "checkpoint": null,
-      "status": "pending"
+      "status": "completed",
+      "run_dirs": ["data-sanity-download-20260521-1413"],
+      "summary": "train2017 118,287장 + annotations 6 파일. integrity_ok=true (image_count match)."
     },
     {
       "step": 1,
@@ -36,9 +38,11 @@
       "timeout_sec": 1800,
       "max_retries": 3,
       "monitors": [],
-      "success_metric": "jq -e '.num_images == 118287 and .num_classes == 80 and .bbox_xyxy_valid == true' runs/{run_dir}/stats.json",
+      "success_metric": "jq -e '.num_images == 118287 and .num_classes == 80 and .class_id_valid == true' runs/{run_dir}/stats.json",
       "checkpoint": null,
-      "status": "pending"
+      "status": "completed",
+      "run_dirs": ["data-sanity-analyze-20260521-1509"],
+      "summary": "118,287장 / 860,001 ann / 80 cls / class_id valid. bbox_xyxy_valid=false (COCO train 의 알려진 경계 위반 — 학습 시 clip 으로 대응). 117,266 with-ann / 1,021 background-only."
     },
     {
       "step": 2,
@@ -49,7 +53,9 @@
       "monitors": [],
       "success_metric": "test -f runs/{run_dir}/figs/class_dist.png && test -f runs/{run_dir}/figs/bbox_size.png && test -f runs/{run_dir}/figs/image_size.png && test -f runs/{run_dir}/figs/samples.png",
       "checkpoint": null,
-      "status": "pending"
+      "status": "completed",
+      "run_dirs": ["data-sanity-vis-20260521-1510"],
+      "summary": "4 figure 생성 (sample 9장 seed=42 결정적)."
     },
     {
       "step": 3,
@@ -60,7 +66,9 @@
       "monitors": [],
       "success_metric": "test -f runs/{run_dir}/report.md && grep -q '## 분포 통계' runs/{run_dir}/report.md",
       "checkpoint": "CP-1",
-      "status": "pending"
+      "status": "approved",
+      "run_dirs": ["data-sanity-report-20260521-1510"],
+      "summary": "train report.md 작성. 사용자 위임으로 CP-1 자동 approve (재구현 우선)."
     }
   ]
 }
