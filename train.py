@@ -22,6 +22,7 @@ from pathlib import Path
 
 import hydra
 import numpy as np
+import psutil
 import torch
 from omegaconf import DictConfig, OmegaConf
 from PIL import Image, ImageDraw
@@ -362,8 +363,26 @@ def main(cfg: DictConfig) -> None:
                 tb_writer.add_scalar("train/grad_norm", gnorm, iter_count)
             tb_writer.add_scalar("train/lr", cur_lr, iter_count)
             if iter_count % log_interval == 0 or iter_count == 1:
+                # 메모리 모니터링 — OOM kill 직전의 마지막 print 가 peak 흔적이 됨.
+                # rss = 컨테이너 안 python process 가 쓰는 host RAM (anonymous + shared).
+                # host_avail = 호스트 RAM 의 available (kernel 의 free + reclaimable buffer/cache).
+                # gpu_alloc / gpu_peak = torch CUDA allocator 의 현재 / 역대 peak (MB).
+                rss_gb = psutil.Process(os.getpid()).memory_info().rss / 1e9
+                vm = psutil.virtual_memory()
+                host_used_gb = vm.used / 1e9
+                host_avail_gb = vm.available / 1e9
+                host_swap_used_gb = psutil.swap_memory().used / 1e9
+                gpu_alloc_gb = torch.cuda.memory_allocated() / 1e9 if device.type == "cuda" else 0
+                gpu_peak_gb = torch.cuda.max_memory_allocated() / 1e9 if device.type == "cuda" else 0
                 print(f"[epoch {epoch} iter {iter_count}] loss={last_loss:.4f} "
-                      f"grad_norm={gnorm:.2f} lr={cur_lr:.2e}")
+                      f"grad_norm={gnorm:.2f} lr={cur_lr:.2e}  "
+                      f"| rss={rss_gb:.1f}G host_avail={host_avail_gb:.1f}G "
+                      f"swap={host_swap_used_gb:.1f}G gpu={gpu_alloc_gb:.1f}/{gpu_peak_gb:.1f}G", flush=True)
+                tb_writer.add_scalar("system/rss_gb", rss_gb, iter_count)
+                tb_writer.add_scalar("system/host_avail_gb", host_avail_gb, iter_count)
+                tb_writer.add_scalar("system/host_swap_gb", host_swap_used_gb, iter_count)
+                tb_writer.add_scalar("system/gpu_alloc_gb", gpu_alloc_gb, iter_count)
+                tb_writer.add_scalar("system/gpu_peak_gb", gpu_peak_gb, iter_count)
             # epoch 내에서도 1000 iter 마다 last.pt 저장 (crash 시 손실 최소화)
             if iter_count % 1000 == 0:
                 torch.save({
