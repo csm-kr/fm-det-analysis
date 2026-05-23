@@ -454,21 +454,247 @@ flowchart TD
     Total --> BW["backward → clip(1.0) → AdamW step"]
 ```
 
-### 2.3. 한 DetectionHead 내부 — mermaid
+### 2.3. 한 DetectionHead 내부 — 단계별 상세
+
+DetectionHead 가 **두 종류의 정보** 를 동시에 굴림:
+1. **ROI feature** — image 의 해당 box 영역 (시각 정보, 7×7 grid)
+2. **proposal feature (obj_feat)** — box 의 "추상 표현" (256-vec, 학습되는 의미)
+
+이 둘이 SA / DynamicConv / FiLM / FFN 거치면서 서로 영향. 마지막에 proposal feature 에서 cls + reg 출력.
+
+> **참고**: DiffusionDet 의 attention 은 **Self-Attention 만** 있음 (proposal 끼리). "Cross-Attention" 의 역할은 **DynamicConv 가 대신** — proposal feature 가 ROI feature 와 상호작용. 일반 Transformer (DETR 등) 와 다른 디자인.
+
+#### 2.3.1. mermaid (단계 전체)
 
 ```mermaid
-flowchart LR
-    In["input<br/>bboxes [B, N, 4]<br/>obj_feat [B, N, 256]<br/>features (4 level)<br/>t [B]"] --> ROI["RoIAlign<br/>box sqrt(area) → level<br/>[B·N, 256, 7, 7]"]
-    ROI --> Flat["flatten + linear<br/>[B·N, 256]"]
-    Flat --> SA["Self-Attention<br/>(box 끼리)"]
-    SA --> DC["DynamicConv<br/>(instance filter)"]
-    DC --> FiLM["FiLM<br/>(time embed)"]
-    FiLM --> FFN["FFN"]
-    FFN --> Cls["cls (1 Linear)<br/>→ cls_logits [B, N, C]"]
-    FFN --> Reg["reg (3 Linear)<br/>→ bbox_delta<br/>→ _apply_deltas<br/>→ bboxes_new"]
-    Cls --> Next["다음 head input"]
-    Reg --> Next
+flowchart TD
+    subgraph IN [Input — 외부에서 들어옴]
+      Bx["bboxes [B, N, 4] xyxy_img<br/>(sampling 또는 prev head)"]
+      Pro0["proposal_features (obj_feat)<br/>[B, N, 256]<br/>(Head 0 = zeros, 이후 prev refined)"]
+      Feat["features (4 level list)<br/>P2 [B,256,H/4,W/4] ... P5"]
+      T["time_emb [B, 1024]<br/>(t → sinusoid → MLP)"]
+    end
+
+    Bx --> ROI["**STEP 0: RoIAlign**<br/>(detail §3)<br/>[B·N, 256, 7, 7]"]
+    Feat --> ROI
+
+    ROI --> Flat["**STEP 1: flatten + permute**<br/>flatten(2): 7×7 → 49<br/>permute(0,2,1)<br/>roi_features [B·N, 49, 256]<br/>(49 spatial tokens × 256 ch)"]
+
+    Pro0 --> Permute["**STEP 2: proposal permute**<br/>[B, N, 256] → [N, B, 256]<br/>(nn.MHA 규약: seq, batch, d)"]
+
+    Permute --> SA["**STEP 3: Self-Attention** (proposals 끼리)<br/>pro2 = MHA(Q=pro, K=pro, V=pro)<br/>pro = pro + dropout(pro2); norm1<br/>같은 batch 의 N=500 proposal 끼리<br/>'다른 box 와의 관계' 학습<br/>[N, B, 256]"]
+
+    SA --> DC["**STEP 4: DynamicConv** (CA 대용 — proposal × ROI)<br/>pro_for_dyn = pro.reshape(1, B·N, 256)<br/>pro2 = inst_interact(pro_for_dyn, roi_features)<br/>  - proposal feature 가 두 개의 1x1 conv kernel 생성 (256→64→256)<br/>  - 그 kernel 로 roi_features [B·N, 49, 256] 을 conv<br/>  - 결과 평균 → [B·N, 256] (7×7 ROI grid → 256-vec 압축)<br/>pro = pro + dropout(pro2); norm2<br/>**이 단계가 ROI 와 proposal 의 만남**<br/>[N, B, 256]"]
+
+    Flat --> DC
+
+    DC --> FiLM["**STEP 5: FiLM time modulation**<br/>scale, shift = MLP(time_emb).chunk(2)  # [B, 256] each<br/>pro = pro * (scale + 1) + shift  # broadcast over N<br/>**현재 timestep t 의 noise 강도를 feature 에 주입**<br/>[N, B, 256]"]
+
+    T --> FiLM
+
+    FiLM --> FFN["**STEP 6: FFN**<br/>pro2 = linear2(ReLU(linear1(pro)))  # 256 → 2048 → 256<br/>pro = pro + dropout(pro2); norm3<br/>[N, B, 256]"]
+
+    FFN --> CLS["**STEP 7a: cls head** (1 Linear)<br/>cls_feat = cls_module(pro)<br/>class_logits = linear(cls_feat).permute(1,0,2)<br/>**[B, N, C=20]** ← cls 출력"]
+
+    FFN --> REG["**STEP 7b: reg head** (3 Linear)<br/>reg_feat = reg_module(pro)  # 3 layer 깊음<br/>bbox_delta = linear(reg_feat).permute(1,0,2)<br/>[B, N, 4] (dx, dy, dw, dh)"]
+
+    REG --> APP["**STEP 8: _apply_deltas**<br/>SCALE_CLAMP 적용 (dw,dh clamp)<br/>new_bboxes = bbox ⊕ bbox_delta<br/>**[B, N, 4] xyxy_img** ← refined box"]
+
+    FFN --> NP["**STEP 9: new_pro**<br/>pro.permute(1,0,2)<br/>**[B, N, 256]** ← refined proposal"]
+
+    APP --> OUT["**Output (3개)**<br/>new_bboxes [B, N, 4]<br/>class_logits [B, N, C]<br/>new_pro [B, N, 256]"]
+    CLS --> OUT
+    NP --> OUT
 ```
+
+#### 2.3.2. ASCII (shape 변환 자세히)
+
+```
+========================================================
+INPUT (외부에서)
+========================================================
+bboxes          [B=32, N=500, 4]    xyxy_img      (sampling 또는 prev head refined)
+proposal_feat   [B=32, N=500, 256]  obj_feat      (Head 0 = zeros, 이후 prev refined)
+features        list of 4 tensors   FPN P2~P5     (학습 중 고정)
+time_emb        [B=32, 1024]        sinusoid(t) MLP
+
+========================================================
+STEP 0 — RoIAlign  (자세히는 §3)
+========================================================
+roi_features = self._multi_scale_roi_align(features, bboxes)
+  → [B·N=16000, 256, 7, 7]                          ← 모든 box 의 7×7×256 ROI feature
+
+========================================================
+STEP 1 — flatten + permute  (DynamicConv 의 token seq 형태)
+========================================================
+roi_features = roi_features.flatten(2).permute(0, 2, 1)
+  ─ flatten(2): [16000, 256, 7, 7] → [16000, 256, 49]    7×7 spatial 을 1 차원으로
+  ─ permute:    [16000, 256, 49]   → [16000, 49, 256]    Transformer token 처럼 (seq, d)
+  → roi_features [16000, 49, 256]                   ← 49 spatial token × 256 ch
+
+========================================================
+STEP 2 — proposal permute  (nn.MHA 규약)
+========================================================
+pro = proposal_features.permute(1, 0, 2)
+  → pro [N=500, B=32, 256]                          ← (seq_len, batch, d_model) 규약
+
+========================================================
+STEP 3 — Self-Attention (proposals 끼리)
+========================================================
+pro2 = self_attn(query=pro, key=pro, value=pro)[0]   ← nn.MultiheadAttention
+  ─ Q, K, V 모두 pro 자기 자신 (Self-Attn)
+  ─ 같은 batch image 안 N=500 proposal 끼리 attention
+  ─ "다른 box 들의 존재를 의식" — 중복 방지, 관계 학습
+pro = pro + dropout(pro2)                            ← residual
+pro = norm1(pro)                                     ← LayerNorm
+  → pro [500, 32, 256]                              ← same shape, 의미 갱신
+
+========================================================
+STEP 4 — DynamicConv (CA 의 역할 — proposal × ROI)
+========================================================
+pro_for_dyn = pro.reshape(1, B·N=16000, 256)         ← 1 seq, BN batch 로 재배치
+pro2 = inst_interact(pro_for_dyn, roi_features)
+  ┌─ DynamicConv 내부 ──────────────────────────────┐
+  │ 1. proposal_feature → 2개의 conv kernel 생성     │
+  │    parameters = dynamic_layer(pro)               │
+  │       [16000, 256] → linear → [16000, 2·64·256] │
+  │    → param1 (256→64 kernel), param2 (64→256)    │
+  │ 2. roi_features [16000, 49, 256] 에 param1 conv │
+  │    → [16000, 49, 64]                            │
+  │ 3. ReLU + LN                                    │
+  │ 4. param2 conv                                   │
+  │    → [16000, 49, 256]                           │
+  │ 5. flatten + linear → [16000, 256] (49 압축)    │
+  │ 6. ReLU + LN                                    │
+  └──────────────────────────────────────────────────┘
+  → pro2 [16000, 256]                              ← 7×7 ROI grid → 256-vec 압축
+pro2 = pro2.reshape(N=500, B=32, 256)
+pro = pro + dropout(pro2)                            ← residual
+pro = norm2(pro)                                     ← LayerNorm
+  → pro [500, 32, 256]                              ← ROI 정보가 proposal 에 흡수
+
+  *핵심*: DiffusionDet 은 CA 없이 DynamicConv 로 ROI ↔ proposal 결합.
+         proposal 이 instance-specific conv kernel 을 생성해 자기 ROI 에 적용.
+
+========================================================
+STEP 5 — FiLM time modulation
+========================================================
+scale_shift = block_time_mlp(time_emb)               ← MLP: [B, 1024] → [B, 512]
+scale, shift = scale_shift.chunk(2, dim=-1)          ← [B, 256] each
+pro = pro * (scale[None, :, :] + 1.0) + shift[None, :, :]
+  ─ broadcast: [500, 32, 256] * [1, 32, 256] + [1, 32, 256]
+  ─ N 방향으로 broadcast (같은 batch image 의 모든 box 는 같은 t)
+  → pro [500, 32, 256]                              ← timestep t 의 noise level 주입
+
+========================================================
+STEP 6 — FFN
+========================================================
+pro2 = linear1(pro)                                  ← 256 → 2048
+pro2 = ReLU(pro2)
+pro2 = dropout(pro2)
+pro2 = linear2(pro2)                                 ← 2048 → 256
+pro = pro + dropout3(pro2)                           ← residual
+pro = norm3(pro)                                     ← LayerNorm
+  → pro [500, 32, 256]                              ← feature transformation
+
+========================================================
+STEP 7 — Output heads (비대칭)
+========================================================
+─ 7a) cls (1 Linear) ───────────────────────────────
+cls_feat = pro
+for layer in cls_module:    # 1-layer
+    cls_feat = layer(cls_feat)
+class_logits = self.class_logits(cls_feat)          ← Linear(256 → C=20)
+class_logits = class_logits.permute(1, 0, 2)
+  → class_logits [B=32, N=500, C=20]               ← **cls 출력**
+
+─ 7b) reg (3 Linear) ───────────────────────────────
+reg_feat = pro
+for layer in reg_module:    # 3-layer (더 깊음)
+    reg_feat = layer(reg_feat)
+bboxes_delta = self.bboxes_delta(reg_feat)          ← Linear(256 → 4)
+bboxes_delta = bboxes_delta.permute(1, 0, 2)
+  → bboxes_delta [B=32, N=500, 4]                  ← (dx, dy, dw, dh)
+
+========================================================
+STEP 8 — _apply_deltas (delta → new bbox)
+========================================================
+new_bboxes = _apply_deltas(bboxes_delta, bboxes, SCALE_CLAMP, BBOX_WEIGHTS)
+  ─ dx, dy → center 이동
+  ─ dw, dh → SCALE_CLAMP 적용 후 exp → w,h 비율
+  ─ pred_w = exp(clamp(dh)) * old_h
+  ─ ...
+  → new_bboxes [B=32, N=500, 4] xyxy_img            ← **refined box**
+
+========================================================
+STEP 9 — output (3 개)
+========================================================
+new_bboxes      [B, N, 4]      ← 다음 head 의 input box (refined)
+class_logits    [B, N, C]      ← 이 head 의 cls 출력 (loss 계산용 + 다음 head 까진 사용 X)
+new_pro         [B, N, 256]    ← 다음 head 의 input obj_feat (refined)
+```
+
+#### 2.3.3. 6 head outer loop — head 간 정보 흐름
+
+```
+                features (4 level, 고정)  ─────────────────────┐
+                time_emb (한 batch 의 t, 고정) ────────────────┤
+                                                                │
+sampler ─→ bboxes_0 ┐                                           │
+           (init)   │                                           │
+          pro_0=0   │                                           │
+                    ▼                                           │
+              ┌─────────────────┐                               │
+              │   Head 0        │ ◄────── features, time_emb ───┤
+              │   (위 9 step)   │                               │
+              └────────┬────────┘                               │
+                       │                                        │
+            ┌──────────┼──────────┐                             │
+            │          │          │                             │
+       new_bboxes_1  cls_0    new_pro_1                         │
+           │           │         │                              │
+           │           ▼         │                              │
+           │     [stack for      │                              │
+           │      deep super]    │                              │
+           │                     │                              │
+           ▼                     ▼                              │
+              ┌─────────────────┐                               │
+              │   Head 1        │ ◄─────────────────────────────┤
+              │   bboxes_1, pro_1                               │
+              └────────┬────────┘                               │
+                       │                                        │
+            ┌──────────┼──────────┐                             │
+            │          │          │                             │
+       new_bboxes_2  cls_1    new_pro_2                         │
+                                                                │
+                       ...                                      │
+                                                                │
+              ┌─────────────────┐                               │
+              │   Head 5        │ ◄─────────────────────────────┘
+              │   bboxes_5, pro_5
+              └────────┬────────┘
+                       │
+            ┌──────────┼──────────┐
+            │          │          │
+       new_bboxes_6  cls_5    new_pro_6  (마지막은 안 씀)
+
+                                  │
+                                  ▼
+       all 6 layer 의 (class_logits, new_bboxes) stack
+         → pred_logits  [B, K=6, N, C]
+         → pred_boxes   [B, K=6, N, 4]
+                                  │
+                                  ▼ (학습: 모든 K 에 loss = deep supervision)
+                              SetCriterion
+
+       (평가: 마지막 head 만 사용 — pred_logits[:, -1], pred_boxes[:, -1])
+```
+
+핵심 의미:
+- **features, time_emb 는 6 head 동안 고정** — 매 head 가 같은 image feature 와 같은 timestep 봄.
+- **bboxes 와 pro 만 head 별로 갱신** — refined box + refined obj_feat 가 다음 head input.
+- **deep supervision**: 6 head 의 (cls, box) 모두 loss 에 기여 → 학습 신호 강함.
+- **iterative refinement**: noisy_bboxes 가 6번 거치며 GT 에 가까워짐.
 
 ### 2.4. Loss 계산 — mermaid
 
