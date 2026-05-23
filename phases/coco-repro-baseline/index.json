@@ -41,17 +41,23 @@
       "status": "pending",
       "resumable": true,
       "resume_from": "runs/{run_dir}/checkpoints/last.pt",
-      "started_at": "2026-05-23T14:31:42+0900",
-      "training_pid": 1223689,
+      "started_at": "2026-05-23T16:09:56+0900",
+      "training_pid": 1291109,
       "run_dirs": [
-        "20260523-0531-coco-repro-baseline"
+        "20260523-0709-coco-repro-baseline"
       ],
       "estimated_eta": "2-5 day (61 epoch × 7392 iter, iter ≈ 0.4-1.0s)",
-      "resume_command": "TORCH_HOME=/workspace/fm-det/.cache/torch python train.py +experiment=coco-repro-baseline seed=42 +train.resume=runs/20260523-0531-coco-repro-baseline/checkpoints/last.pt",
-      "eval_command": "TORCH_HOME=/workspace/fm-det/.cache/torch python eval.py +experiment=coco-repro-baseline seed=42 run_dir=runs/20260523-0531-coco-repro-baseline",
-      "status_note": "P0 학습 백그라운드 진행 중. log = phases/coco-repro-baseline/train.log, TB = http://localhost:6007. 종료 후 eval.py 호출 → AC 검증.",
+      "resume_command": "TORCH_HOME=/workspace/fm-det/.cache/torch python train.py +experiment=coco-repro-baseline seed=42 +train.resume=runs/20260523-0709-coco-repro-baseline/checkpoints/last.pt",
+      "eval_command": "TORCH_HOME=/workspace/fm-det/.cache/torch python eval.py +experiment=coco-repro-baseline seed=42 run_dir=runs/20260523-0709-coco-repro-baseline",
+      "status_note": "재시작 (iter 1 loss=34.87, lr=2.5e-7 warmup ✓). 정상 진행.",
       "tensorboard_pid": 1221355,
-      "tensorboard_url": "http://localhost:6007  (compose 매핑 6006→6007)"
+      "tensorboard_url": "http://localhost:6007  (compose 매핑 6006→6007)",
+      "previous_attempt": {
+        "run_dir": "20260523-0531-coco-repro-baseline",
+        "iters_completed": 2825,
+        "elapsed_sec": 2319,
+        "crash": "NaN loss assertion at iter 2825 — fix: train.py 의 strict assertion 을 본 DiffusionDet repo 패턴 (skip + 경고) 으로 변경 + warmup 1000 iter (configs/train/baseline.yaml 정의분 적용) + 1000 iter 마다 last.pt 저장."
+      }
     },
     {
       "step": 1,

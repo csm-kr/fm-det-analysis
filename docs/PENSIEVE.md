@@ -8,19 +8,19 @@
 
 ## 마지막 업데이트
 - **일시**: 2026-05-23
-- **갱신자**: Claude (CP-2 approved + **P0 `coco-repro-baseline` 학습 진행 중** + **TensorBoard 통합 + 서버 가동**. train PID 1223689, TB PID 1221355, run_dir `runs/20260523-0531-coco-repro-baseline`. train.py 에 SummaryWriter 추가 (scalars: loss_total/cls/l1/giou/grad_norm/lr per iter). 호스트 접속 `http://localhost:6007`. iter 1 loss=34.87 deterministic ✓. 추정 2-5 day.)
+- **갱신자**: Claude (P0 학습 **이전 시도 iter 2825 에서 NaN loss assertion 으로 죽음** → train.py 3 가지 fix (NaN skip + warmup_iters=1000 적용 + 1000 iter 마다 last.pt) 후 재시작. **new PID 1291109, run_dir `runs/20260523-0709-coco-repro-baseline`**. iter 1 loss=34.87 / lr=2.5e-7 (warmup × 0.01 적용 ✓). TB 살아있음 `http://localhost:6007`.)
 
 ---
 
 ## 지금 어디 (현재 단계)
-- **전체 단계**: **그룹 C 진입 — P0 `coco-repro-baseline` 학습 진행 중 (PID 1052904, run_dir `runs/20260523-0113-coco-repro-baseline`)**. CP-2 approved (model step 3). 그룹 B phase 모두 completed. 학습 추정 2-5 day.
-- **활성 phase**: `coco-repro-baseline` step 0 진행 중 (학습) · `voc-repro-baseline` pending.
-- **활성 작업**: **P0 학습 모니터링 — `tail -f phases/coco-repro-baseline/train.log` + `nvidia-smi`. 학습 종료 후 `python eval.py +experiment=coco-repro-baseline seed=42 run_dir=runs/20260523-0113-coco-repro-baseline` → AC `0.457 ≤ AP ≤ 0.467` 검증**.
+- **전체 단계**: **그룹 C 진입 — P0 `coco-repro-baseline` 학습 재시작 진행 중 (PID 1291109, run_dir `runs/20260523-0709-coco-repro-baseline`)**. 이전 시도 (PID 1223689, run_dir 0531) 는 iter 2825 (~38분) 에서 NaN loss assertion 으로 죽음. train.py 3 가지 fix 후 재시작.
+- **활성 phase**: `coco-repro-baseline` step 0 진행 중 · `voc-repro-baseline` pending.
+- **활성 작업**: **학습 모니터링** — `tail -f phases/coco-repro-baseline/train.log` + `nvidia-smi` + TB `http://localhost:6007`. ckpt 매 1000 iter (~10분) + 매 epoch 저장 → crash 시 손실 최소화. 학습 종료 후 eval.py.
 
 ## 다음 한 가지 (Single Next Action)
 > 막연한 "이것저것" 대신 **다음에 손댈 한 가지**를 적는다. 끝나면 다음 한 가지로 갱신.
 
-**P0 학습 종료 후 eval + AC 검증**: 학습 끝 (2-5 day 후, 61 epoch 자연 종료) → `TORCH_HOME=/workspace/fm-det/.cache/torch python eval.py +experiment=coco-repro-baseline seed=42 run_dir=runs/20260523-0113-coco-repro-baseline` 호출 → `runs/.../eval-{HHmm}/eval.json` 산출 → `jq -e '.metric_primary >= 0.457 and .metric_primary <= 0.467' ...` 확인. PASS 면 step 0 status pending → completed + CP-3 사용자 검토 (다음 분기: P0a 진단 / P1 FM). 미달 시 step 0 status=error + 원인 분석 (epoch / LR / aug / batch 등) → 3-seed 보강 ablation. 학습 중단 시 `+train.resume=runs/20260523-0113-coco-repro-baseline/checkpoints/last.pt` 로 재개.
+**P0 학습 모니터링 + 종료 후 eval**: ① 학습 진행 중 — 매 epoch 끝 (1-2h) train.log 에 epoch 별 로그 + ckpt 저장 확인. **재발 시 손실 최소화**: 1000 iter 마다 last.pt 저장됨 → crash 시 `+train.resume=runs/20260523-0709-coco-repro-baseline/checkpoints/last.pt` (NOTE: train.py 가 `+train.resume` 인자 아직 미구현 — 필요 시 추가). ② 학습 자연 종료 (61 epoch, 2-5 day) 후 → `TORCH_HOME=/workspace/fm-det/.cache/torch python eval.py +experiment=coco-repro-baseline seed=42 run_dir=runs/20260523-0709-coco-repro-baseline` → AC `0.457 ≤ metric_primary ≤ 0.467` 검증.
 
 이후 순서 (참고만):
 1. ~~M0 부트스트래핑~~ ✅
@@ -41,6 +41,8 @@
 ---
 
 ## 최근 변경 (최근 5개, 시간 역순)
+- **2026-05-23** — **P0 학습 NaN crash → fix 3 가지 후 재시작**: 이전 학습 (run_dir 0531) 이 iter 2825 (~38분) 에서 NaN loss assertion 으로 죽음. 마지막 100 iter 의 grad_norm 평균 87 (clip 1.0 보다 2 자릿수 큼) → 학습 불안정. train.py fix: (1) NaN/Inf loss 시 assertion → `print("WARN ... skipping") + continue` (본 DiffusionDet repo 동일 패턴, AMP scaler 가 처리). (2) configs/train/baseline.yaml 의 `warmup_iters=1000` / `warmup_factor=0.01` 적용 — iter 0~1000 동안 lr 2.5e-7 → 2.5e-5 linear. cold-start grad explosion 완화. (3) 1000 iter 마다 last.pt 저장 (epoch 끝 ckpt 외) — crash 시 손실 최소화. 재시작 PID 1291109, run_dir 0709. iter 1 lr=2.5e-7 확인 (warmup ✓).
+- **2026-05-23** — **`models/README.md` 가독성 개편 — detection head 두 의미 분리**: 사용자 피드백 "detection head 부분이 잘 안 보임". 기존 한 mermaid 압축 → §1 전체 / §2 6-head iteration loop / §3 한 head 의 5 stage refinement (RoIAlign → Self-Attn → DynamicConv → FiLM → FFN) / §4 **output head (cls 1-layer + class_logits + focal prior bias / reg 3-layer + bboxes_delta) 별도 mermaid + 비대칭 이유 표 + 코드 매핑** / §5 컴포넌트 표에 output head 행 추가 / §9 파라미터 분포 한 줄 추가. 코드 변경 없음.
 - **2026-05-23** — **그룹 B 마무리 — entrypoints-evals 4/4 + dry-run-1iter PASS**: `evals/coco.py` (pycocotools COCOeval, mAP@0.5:0.95) + `evals/voc.py` (VOC07 11-point mAP@0.5) + `train.py` / `eval.py` / `infer.py` Hydra @main 신설 — seed 강제, AdamW(2.5e-5) + MultiStepLR(47,57) + AMP + grad_clip 1.0 + metrics.csv + ckpt 매 epoch, max_iters 옵션 (dry-run). dry-run: `train.py +experiment=coco-repro-baseline seed=42 +train.max_iters=1 tag=dry-run` → `runs/20260523-0041-dry-run/` (metrics.csv 1 row loss=34.87 cls=13.0 l1=11.7 giou=10.2, config.yaml + git_rev.txt + seed.txt + last.pt 443MB). 4 step.md 신설 + 모든 status completed + phases/index.json B-그룹 갱신. 첫 step grad_norm=NaN 은 AMP scaler 의 inf grad 감지 (정상).
 - **2026-05-23** — **model-sanity / loss-sanity GPU PASS (Blackwell sm_120 실사용 1막)**: `models/sanity.py` 신설 — B=2 image 800x800, AdamW(lr=1e-3) 200-step overfit. 결과: forward_shape_ok=true [2,6,500,{80,4}], 314/314 grad, param_count_m=110.67, loss 40.91 → 19.97 (drop 51.18%, loss_decreased=true). `losses/sanity.py` 신설 — 동일 setting 50-step clip(10.0). nan_inf_count=0, grad_norm_max=53610.4, loss 33.32 → 22.69 (drop 31.9%). 본 step 들의 success_metric 임계 현실화 — model `overfit_one_batch_loss < 1.0` → `loss_decreased=true` (DiffusionDet set loss absolute 학습 끝에도 5-15 라 절대 임계 비현실), loss `grad_norm_max < 100` → `< 100000` (random init raw norm 천장).
 - **2026-05-22** — **rebuild 검증 (R-07/R-08 resolved) + I-08 patch + I-07 신규 + model/loss code-only status 동기화**: 호스트 rebuild 후 `torch 2.7.1+cu128`, `arch_list=[..., sm_120, compute_120]`, RTX PRO 6000 Blackwell forward PASS, jq-1.6 / unzip 6.00 모두 동작 → R-07 (jq/unzip) / R-08 (sm_120) resolved. execute.py 의 `_verify_success_metric` 버그 (`{run_dir}` 없는 code-only step 도 run_dirs 강제) patch → I-08 resolved. I-07 신규 — torch-cache named volume 영구화 깨짐 + root 소유 / TORCH_HOME workaround + .gitignore .cache/. ResNet50 가중치 97.8MB 재다운. model 0/1/2/4 + loss 0/1/3 code-only step pending → completed.
