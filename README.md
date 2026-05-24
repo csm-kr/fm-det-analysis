@@ -155,19 +155,21 @@ GT = lime, prediction (score≥0.3) = red. eval coord fix (I-10) + per-class NMS
 
 ### Diffusion denoising 과정 GIF
 
-DDIM 9 step 의 박스 변화 + 최종 NMS 결과를 11 프레임 GIF 로 시각화. 첫 프레임은 t=999 의 random 500 박스 init, 점점 t↓ 진행하며 score 0.1+ 박스만 표시, 마지막 프레임은 NMS 후 살아남은 박스를 **두꺼운 빨강 + class:score 라벨** 로 강조.
+DDIM 9 step 의 박스 변화 + 최종 NMS 결과를 11 프레임 GIF 로 시각화. 첫 프레임은 t=999 의 random 500 박스 init, 단계 진행하며 top-200 박스 (alpha = score) 가 객체로 점점 수렴, 마지막 프레임은 NMS 후 살아남은 박스를 **두꺼운 빨강 + class:score 라벨** 로 강조.
 
-10 장: `runs/20260523-1416-voc-repro-baseline/debug_out/diffusion_*.gif` (3~7 MB / 파일).
+![cars diffusion](docs/assets/qualitative/voc_diffusion_cars.gif)
 
-| 파일 | 설명 |
-|------|------|
-| `diffusion_00_2007_000001.gif` | 강아지/사람 (init→DDIM→NMS) |
-| `diffusion_03_2007_000004.gif` | 거리 차들 — 다수 객체 denoise |
-| `diffusion_06_2007_000010.gif` | 말 + 라이더 — 겹친 객체 |
-| `diffusion_07_2007_000011.gif` | 고양이 — 단일 large object |
-| ... | (총 10 장) |
+*2007/000004 — 거리 차들. init 의 500 박스 격자 → DDIM 단계마다 차 위로 수렴 → NMS 후 차당 1 box.*
 
-> 재현 도구: `phases/voc-repro-baseline/debug_diffusion_gif.py` — `--n_steps 9` (frame 수 = n_steps + 2 init + nms). 색 규약: lime=GT · red(가는) =해당 step top boxes (score≥0.1) · red(두꺼운) =NMS 후 final boxes (score≥0.3).
+| | |
+|---|---|
+| ![horse](docs/assets/qualitative/voc_diffusion_horse.gif) <br/>2007/000010 — 말 + 라이더 (겹친 객체) | ![cat](docs/assets/qualitative/voc_diffusion_cat.gif) <br/>2007/000011 — 고양이 (단일 large object) |
+
+전체 10 장 원본 (3-7MB / 파일): `runs/20260523-1416-voc-repro-baseline/debug_out/diffusion_*.gif`.
+
+> 재현 도구: `phases/voc-repro-baseline/debug_diffusion_gif.py` — `--n_steps 9` (frame 수 = n_steps + 2 = init + DDIM + nms).
+>
+> 색 규약: lime=GT · red(투명→진함, score=alpha)=DDIM step boxes · red(두꺼운)=NMS 후 final boxes (score≥0.3).
 
 ---
 
