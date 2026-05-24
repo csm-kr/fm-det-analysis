@@ -7,20 +7,20 @@
 ---
 
 ## 마지막 업데이트
-- **일시**: 2026-05-23
-- **갱신자**: Claude (**VOC eval 좌표계 버그 (I-10) fix — mAP@0.5 0.0000 → 0.3251 (8장 subset, epoch 25 ckpt). 모델·loss 는 정상, eval 만 깨졌었음**. `evals/voc.py` 에서 prediction sx,sy scaling 제거 (GT 와 둘 다 cur 좌표). 학습 (PID 1614767, run_dir 1416) 은 그대로 진행 중 — epoch 26 iter 13800 loss=3.81 정상. fix 는 다음 학습 process 의 epoch eval 부터 반영. 진단 도구: `phases/voc-repro-baseline/debug_eval_inference.py` (last.pt 로드 + overlay PNG + buggy/fixed mAP 비교).)
+- **일시**: 2026-05-24
+- **갱신자**: Claude (**NMS 추가 (I-11) — VOC07 test mAP@0.5 0.2500 → 0.7002** on epoch 29 last.pt. Faster R-CNN ~73% / DETR ~70% 라인 진입. `evals/{voc,coco}.py` 에 `torchvision.ops.batched_nms(iou=0.5)` per-class NMS 추가. 학습 일시 중지 (PID 1614767 + workers 정리됨, GPU 96GB free). train.py 에 `+train.resume=<path>` 옵션 추가 (model/optim/sched/scaler 복원). diffusion denoise 시각화 GIF 10장 신설 (`debug_diffusion_gif.py`). README — VOC 70.02% / per-class AP 표 / Diffusion GIF 섹션 갱신.)
 
 ---
 
 ## 지금 어디 (현재 단계)
-- **전체 단계**: **그룹 C 진입 — P0 `voc-repro-baseline` 학습 재시작 진행 중 (PID 1614767, PPID=1 detach, run_dir `runs/20260523-1416-voc-repro-baseline`)**. COCO 0933 run 도 같은 SIGHUP 으로 사망 (iter 4400 / epoch 0) — 별도 재시작 필요. 최근 commit f23d21c (decoder fix + phase 상태 push).
-- **활성 phase**: `voc-repro-baseline` step 0 진행 중 · `coco-repro-baseline` step 0 사망 (재시작 대기).
-- **활성 작업**: **VOC 학습 모니터링** — `tail -f phases/voc-repro-baseline/train.log` + `nvidia-smi` + TB `http://localhost:6007`. ckpt 매 1000 iter + 매 epoch.
+- **전체 단계**: **그룹 C — P0 VOC 학습 일시 중지 (epoch 29 / 60, last.pt mAP@0.5=0.7002)** + resume 옵션 train.py 에 추가 (커밋 대기). COCO 는 재시작 대기.
+- **활성 phase**: `voc-repro-baseline` step 0 일시 중지 (resume 대기) · `coco-repro-baseline` step 0 재시작 대기.
+- **활성 작업**: **VOC resume 재시작 — `nohup setsid env TORCH_HOME=... python train.py +experiment=voc-repro-baseline seed=42 +train.resume=runs/20260523-1416-voc-repro-baseline/checkpoints/last.pt > phases/voc-repro-baseline/train.log 2>&1 < /dev/null &`**.
 
 ## 다음 한 가지 (Single Next Action)
 > 막연한 "이것저것" 대신 **다음에 손댈 한 가지**를 적는다. 끝나면 다음 한 가지로 갱신.
 
-**VOC 학습 모니터링 + COCO 재시작**: ① VOC 학습 진행 중 — 30-60분 안 epoch 0 끝 (iter 517) → eval 시작. **mAP 변화 주시** (이전 1233 run 은 epoch 0~2 까지 mAP≈0 stuck — decoder fix 후 회복 여부 확인). ② COCO 도 같은 패턴으로 재시작 필요 — `nohup setsid env TORCH_HOME=/workspace/fm-det/.cache/torch python train.py +experiment=coco-repro-baseline seed=42 > phases/coco-repro-baseline/train.log 2>&1 < /dev/null &`. ③ 학습 자연 종료 후 → `python eval.py +experiment=voc-repro-baseline seed=42 run_dir=runs/20260523-1416-voc-repro-baseline`.
+**VOC resume 재시작 — epoch 29 → 60 끝까지**: 위 resume 명령 실행 → 새 run_dir 에서 시작 (start_epoch=30) → milestones=47, 57 의 lr decay 통과 → 자연 종료 후 eval.py 한 번 → 최종 mAP 측정 (예상 75~80%). COCO 는 그 후.
 
 이후 순서 (참고만):
 1. ~~M0 부트스트래핑~~ ✅
@@ -41,6 +41,7 @@
 ---
 
 ## 최근 변경 (최근 5개, 시간 역순)
+- **2026-05-24** — **NMS 추가 (I-11) — mAP@0.5 0.2500 → 0.7002 (+45 점) + diffusion denoise GIF 10 장**: I-10 coord fix 후에도 mAP 25% 천장. 원인은 NMS 미적용 — 한 객체에 여러 head refined box 중복 → 1 개만 TP. `evals/{voc,coco}.py` 에 per-class `batched_nms(iou=0.5)` 추가 (score thresh 먼저 → batched_nms → top-100). 같은 epoch 29 last.pt 로 **0.0000 → 0.2500 → 0.7002** (Faster R-CNN ~73% / DETR ~70% 라인). per-class AP cat 87.87 / horse 84.52 / dog 84.28 / aeroplane 77.82 ... pottedplant 47.48 / chair 48.43 / bottle 48.16. 신설 `phases/voc-repro-baseline/debug_diffusion_gif.py` — DDIM 9 step 의 박스 변화 + NMS 결과 11 프레임 GIF (10 장, runs/.../debug_out/diffusion_*.gif).
 - **2026-05-23** — **VOC eval 좌표계 버그 fix (I-10) — mAP@0.5 0.0000 → 0.3251 (8 장 subset, epoch 25 ckpt)**: epoch 0~25 내내 mAP≈0 인 의문 추적. 원인: `evals/voc.py` 가 prediction 을 sx,sy 로 orig 좌표 scale 하는데 GT 는 transforms 후 cur 좌표 그대로 → IoU mismatch → 모두 FP. 모델·loss 는 정상이었음 (loss 38.95 → 3.5 정상 감소). Fix: prediction scaling 제거, 둘 다 cur 에서 비교. Sanity tool: `phases/voc-repro-baseline/debug_eval_{coords,inference}.py` — coord 진단 + last.pt 로드 + GT/pred PNG overlay 산출 + buggy vs fixed mAP 비교. evals/coco.py 는 pycocotools 가 외부 ann json (orig) 과 비교라 다른 케이스 (scaling 정당).
 - **2026-05-23** — **P0 VOC 학습 SIGHUP 사망 → decoder fix push + detach 재시작**: 이전 시도 (PID 1520829, run_dir 1233) 가 iter 1805 / epoch 3 에서 sudden death (no traceback in log → exception 이 아니라 외부 SIGKILL/SIGHUP). 원인: train.py 를 시작한 *다른* Claude 세션이 종료되면서 child 인 python 도 같이 죽음 (I-09). 조치: (1) `models/decoder.py` 의 누적 fix 4 가지 (FFN↔FiLM 순서·dyn-conv batch ordering·bbox.detach·xavier+focal-bias init) commit bdcb4cd → push f23d21c. (2) `nohup setsid env TORCH_HOME=... python train.py ... < /dev/null &` 로 PPID=1 detach. (3) new PID 1614767, run_dir 1416. iter 1 grad_norm=476 (이전 15369 의 1/30 → decoder fix 효과 가능). COCO 0933 run 도 같이 사망 — 별도 재시작 대기.
 - **2026-05-23** — **P0 학습 NaN crash → fix 3 가지 후 재시작**: 이전 학습 (run_dir 0531) 이 iter 2825 (~38분) 에서 NaN loss assertion 으로 죽음. 마지막 100 iter 의 grad_norm 평균 87 (clip 1.0 보다 2 자릿수 큼) → 학습 불안정. train.py fix: (1) NaN/Inf loss 시 assertion → `print("WARN ... skipping") + continue` (본 DiffusionDet repo 동일 패턴, AMP scaler 가 처리). (2) configs/train/baseline.yaml 의 `warmup_iters=1000` / `warmup_factor=0.01` 적용 — iter 0~1000 동안 lr 2.5e-7 → 2.5e-5 linear. cold-start grad explosion 완화. (3) 1000 iter 마다 last.pt 저장 (epoch 끝 ckpt 외) — crash 시 손실 최소화. 재시작 PID 1291109, run_dir 0709. iter 1 lr=2.5e-7 확인 (warmup ✓).

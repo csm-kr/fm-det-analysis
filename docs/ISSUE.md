@@ -24,6 +24,18 @@
 
 ## 진행 중 (open / blocked)
 
+### I-11: eval 에 NMS 미적용 — 한 객체에 중복 박스 → mAP 25% 천장 (실제 가중치는 70% 수준)
+- **상태**: resolved (2026-05-24 — evals/voc.py 와 evals/coco.py 에 per-class `torchvision.ops.batched_nms` (iou=0.5) 추가)
+- **발견일**: 2026-05-24
+- **카테고리**: eval
+- **증상**: I-10 (좌표계 fix) 적용 후에도 VOC mAP@0.5 가 0.2500 에서 정체. per-class AP 0.19~0.30 으로 균등하지만 천장이 낮음. inference overlay 보면 한 객체에 여러 head 의 refined box 가 같은 영역에 중복.
+- **원인**: `evals/voc.py` / `evals/coco.py` 가 top-K 만 추출하고 NMS 를 적용하지 않음. 500 proposals × C class 중 score 상위 100 개를 그대로 prediction 으로 사용 → 한 객체에 N 개 박스가 있으면 가장 score 높은 1 개만 TP, 나머지 N-1 개는 모두 FP → mAP 하락. 원본 DiffusionDet inference 는 NMS `iou_thresh=0.5` 적용 (`DiffusionDet/.../diffusiondet.py` 의 `inference_*` 분기).
+- **해결책 / 우회**: per-class NMS — `torchvision.ops.batched_nms(boxes, scores, class_idx, iou_threshold=0.5)`. [N, C] → [N*C] 펼침 → score thresh 먼저 (대부분 < 0.05 라 NMS 부담 경감) → batched_nms → top-100. 같은 ckpt (epoch 29 last.pt) VOC07 test full eval:
+  - 좌표 fix 전: mAP@0.5 = 0.0000
+  - 좌표 fix 후 (NMS 없음): mAP@0.5 = **0.2500**
+  - 좌표 fix + NMS: mAP@0.5 = **0.7002** (+45 점, ~3 배)
+- **재발 방지**: 새 eval pipeline 작성 시 (a) GT 좌표계 (b) NMS (c) score thresh (d) max_dets 네 가지 명시. evals/{voc,coco}.py 의 `nms_thresh` 파라미터 기본값 0.5 로 박힘. **mAP 가 짝수 비율 (예: 25%) 에서 멈춰서 더 안 오르면 첫 의심은 NMS 누락**.
+
 ### I-10: VOC eval 가 prediction 만 orig 좌표로 scale 하고 GT 는 cur 좌표로 둠 — mAP≈0 false-negative (실제 학습 정상)
 - **상태**: resolved (2026-05-23 — evals/voc.py 의 prediction sx, sy scaling 제거, 둘 다 cur 좌표에서 비교)
 - **발견일**: 2026-05-23
