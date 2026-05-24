@@ -18,6 +18,7 @@ import os
 import random
 import subprocess
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import hydra
@@ -71,10 +72,14 @@ def _print_startup(cfg, out_dir, rev, n_train, n_eval, device, amp_enabled, amp_
     bar = "=" * 70
     optim_cfg = cfg.train.optimizer
     sch_cfg = cfg.train.scheduler
+    now_utc = datetime.now(timezone.utc)
+    now_kst = now_utc.astimezone(timezone(timedelta(hours=9)))
     lines = [
         bar,
         f"  fm-det training",
         bar,
+        f"  started    : {now_utc.strftime('%Y-%m-%d %H:%M:%S')} UTC  "
+        f"(= {now_kst.strftime('%H:%M:%S')} KST)",
         f"  data       : {cfg.data.name}  batch={cfg.data.batch_size}  num_classes={cfg.data.num_classes}",
         f"               train_imgs={n_train}  eval_imgs={n_eval}  iters/epoch={n_train // cfg.data.batch_size}",
         f"  model      : {cfg.model.name}  num_proposals={cfg.model.num_proposals}  heads={cfg.model.num_heads}",
@@ -87,7 +92,7 @@ def _print_startup(cfg, out_dir, rev, n_train, n_eval, device, amp_enabled, amp_
         f"  epochs     : {cfg.train.epochs}  log_interval={cfg.train.log_interval}  eval_interval_epoch={eval_interval}",
         f"  seed       : {cfg.seed}  device={device}  ({torch.cuda.get_device_name(0) if device.type=='cuda' else 'cpu'})",
         f"  git rev    : {rev[:12]}",
-        f"  out_dir    : {out_dir}",
+        f"  out_dir    : {out_dir}  (이름의 HHMM 은 UTC)",
         bar,
     ]
     print("\n".join(lines), flush=True)
