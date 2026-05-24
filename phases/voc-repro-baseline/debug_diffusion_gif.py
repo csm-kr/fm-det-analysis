@@ -49,27 +49,44 @@ def _to_pil(img_chw: torch.Tensor, mean, std) -> Image.Image:
 
 def _draw_frame(base_pil: Image.Image, gt_boxes: torch.Tensor, gt_labels: torch.Tensor,
                 boxes: torch.Tensor, scores: torch.Tensor, classes: torch.Tensor,
-                label: str, nms_mode: bool = False) -> Image.Image:
-    """한 프레임 — GT(lime) + boxes(red). NMS 모드면 두꺼운 빨강 + class 라벨."""
+                label: str, nms_mode: bool = False, init_mode: bool = False) -> Image.Image:
+    """한 프레임.
+
+    - GT: lime, width=3
+    - init_mode: 모든 박스 score 0 → 균일 흐린 빨강 (alpha=40, width=1) — 수렴 시작점 보여주기
+    - nms_mode: 두꺼운 빨강 (alpha=255, width=3) + class:score 라벨
+    - 일반 ddim step: alpha 와 width 가 score 에 비례 → 낮은 score 흐림, 높은 score 진함.
+      이렇게 해야 500 박스가 점점 객체로 수렴하는 denoise 패턴이 보임 (score thresh 로 박스가
+      사라지는 게 아니라, 흐려졌다 진해지는 형태).
+    """
     pil = base_pil.copy().convert("RGBA")
     overlay = Image.new("RGBA", pil.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)
-    # GT lime
+    # GT lime — 먼저 깔고 (semi-transparent 로 ghost ref)
     for j in range(gt_boxes.shape[0]):
         x1, y1, x2, y2 = gt_boxes[j].tolist()
-        draw.rectangle([x1, y1, x2, y2], outline=(0, 255, 0, 255), width=3)
+        draw.rectangle([x1, y1, x2, y2], outline=(0, 255, 0, 200), width=2)
         ln = int(gt_labels[j])
         name = VOC_CLASSES[ln] if ln < len(VOC_CLASSES) else str(ln)
         draw.text((x1 + 2, max(y1 - 12, 0)), f"GT:{name}", fill=(0, 255, 0, 255))
-    # pred boxes
-    width = 3 if nms_mode else 1
-    alpha = 255 if nms_mode else 120
+    # pred boxes (GT 위에 덮어 — 좋은 prediction 일수록 GT 와 겹쳐 잘 안 보였던 문제 해결)
     for j in range(boxes.shape[0]):
         x1, y1, x2, y2 = boxes[j].tolist()
         x1 = max(0.0, x1); y1 = max(0.0, y1)
         x2 = min(pil.size[0] - 1.0, x2); y2 = min(pil.size[1] - 1.0, y2)
         if x2 <= x1 or y2 <= y1:
             continue
+        if nms_mode:
+            width = 4
+            alpha = 255
+        elif init_mode:
+            width = 1
+            alpha = 60
+        else:
+            sc = float(scores[j])
+            # 흐릿 → 진함 linear: score 0 → alpha 70, score 1 → alpha 255 (base 올림)
+            alpha = int(70 + min(max(sc, 0.0), 1.0) * 185)
+            width = 1 if sc < 0.3 else (2 if sc < 0.6 else 3)
         draw.rectangle([x1, y1, x2, y2], outline=(255, 0, 0, alpha), width=width)
         if nms_mode:
             cn = int(classes[j])
@@ -86,8 +103,7 @@ def _draw_frame(base_pil: Image.Image, gt_boxes: torch.Tensor, gt_labels: torch.
 
 @torch.no_grad()
 def run_one(model, image: torch.Tensor, n_steps: int, device, amp_dtype,
-            score_thresh_viz: float = 0.1, top_per_step: int = 50,
-            nms_thresh: float = 0.5, max_nms: int = 100):
+            top_per_step: int = 200, nms_thresh: float = 0.5, max_nms: int = 100):
     """1 이미지 → DDIM 단계별 (boxes, scores, classes) 리스트 + 최종 NMS 결과."""
     sampler = model.sampler
     decoder = model.decoder
@@ -134,23 +150,19 @@ def run_one(model, image: torch.Tensor, n_steps: int, device, amp_dtype,
         pred_xyxy_img = pred_xyxy_img[:, 0].float()  # [B, N, 4]
         last_logits, last_xyxy = pred_logits, pred_xyxy_img
 
-        # 시각화용 top-per_step 박스 (score >= viz thresh)
+        # 시각화: top_per_step boxes (score 필터 없이 alpha 만으로 표현)
         sc = pred_logits[0].sigmoid()
         flat_scs = sc.reshape(-1)
         N_b, C = sc.shape
         flat_box = pred_xyxy_img[0].unsqueeze(1).expand(N_b, C, 4).reshape(-1, 4)
         flat_cls = torch.arange(C, device=device).unsqueeze(0).expand(N_b, C).reshape(-1)
-        m = flat_scs >= score_thresh_viz
-        f_s = flat_scs[m]
-        f_b = flat_box[m]
-        f_c = flat_cls[m]
-        if f_s.numel() > top_per_step:
-            top_s, top_i = f_s.topk(top_per_step)
-            f_s = top_s; f_b = f_b[top_i]; f_c = f_c[top_i]
+        # 항상 top-K 만 (대부분 동일한 박스의 다른 class 들이라 N*C 다 그리면 중복)
+        k = min(top_per_step, flat_scs.numel())
+        top_s, top_i = flat_scs.topk(k)
         frames_data.append({
-            "boxes": f_b.cpu(),
-            "scores": f_s.cpu(),
-            "classes": f_c.cpu(),
+            "boxes": flat_box[top_i].cpu(),
+            "scores": top_s.cpu(),
+            "classes": flat_cls[top_i].cpu(),
             "t": int(t_cur.item()),
             "kind": "ddim",
         })
@@ -241,20 +253,23 @@ def main():
         base_pil = _to_pil(images[0], list(cfg.data.mean), list(cfg.data.std))
         frames = []
         for fi, fd in enumerate(frames_data):
-            if fd["kind"] == "init":
-                label = f"step 0/{args.n_steps}  INIT (random)  t={fd['t']:>4d}  N_boxes={fd['boxes'].shape[0]}"
-            elif fd["kind"] == "ddim":
+            init = (fd["kind"] == "init")
+            nms = (fd["kind"] == "nms")
+            if init:
+                label = f"step 0/{args.n_steps}  INIT random  t={fd['t']:>4d}  N_boxes={fd['boxes'].shape[0]} (faint)"
+            elif nms:
+                label = f"FINAL + NMS  iou=0.5  N_kept={fd['boxes'].shape[0]} (score>=0.3)"
+            else:
                 step_i = fi  # 1-based index of ddim
-                label = (f"step {step_i}/{args.n_steps}  DDIM denoise  t={fd['t']:>4d}  "
-                          f"N_vis={fd['boxes'].shape[0]} (score>=0.1)  "
-                          f"mean_score={float(fd['scores'].mean()):.2f}"
-                          if fd['scores'].numel() else
-                          f"step {step_i}/{args.n_steps}  DDIM denoise  t={fd['t']:>4d}  N_vis=0")
-            else:  # nms
-                label = (f"FINAL + NMS  iou=0.5  N_kept={fd['boxes'].shape[0]} (score>=0.3)")
+                if fd['scores'].numel():
+                    label = (f"step {step_i}/{args.n_steps}  DDIM denoise  t={fd['t']:>4d}  "
+                              f"top{fd['boxes'].shape[0]} (alpha=score)  "
+                              f"max_score={float(fd['scores'].max()):.2f}")
+                else:
+                    label = f"step {step_i}/{args.n_steps}  DDIM denoise  t={fd['t']:>4d}  empty"
             frame = _draw_frame(base_pil, gt_boxes, gt_labels,
                                   fd["boxes"], fd["scores"], fd["classes"],
-                                  label=label, nms_mode=(fd["kind"] == "nms"))
+                                  label=label, nms_mode=nms, init_mode=init)
             frames.append(frame)
 
         out_path = out_dir / f"diffusion_{idx:02d}_{tgt['voc_id'].replace('/', '_')}.gif"
