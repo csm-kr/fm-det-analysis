@@ -207,6 +207,27 @@ def main(cfg: DictConfig) -> None:
 
     ckpt_dir = out_dir / "checkpoints"
     ckpt_dir.mkdir(exist_ok=True)
+
+    # ─── resume (선택) ───────────────────────────────────────────────
+    # cfg.train.resume = <ckpt path> 있으면 model/optim/sched/scaler 복원 + start_epoch 갱신.
+    # metrics.csv / eval_history.json 은 새 run_dir 의 새 파일로 시작 (이전 run_dir 은 그대로 보존).
+    resume_path = cfg.train.get("resume", None)
+    start_epoch = 0
+    iter_count = 0
+    if resume_path:
+        rp = Path(resume_path)
+        if not rp.exists():
+            raise FileNotFoundError(f"resume ckpt not found: {rp}")
+        state = torch.load(rp, map_location=device, weights_only=False)
+        model.load_state_dict(state["model"])
+        optim.load_state_dict(state["optim"])
+        multistep.load_state_dict(state["scheduler"])
+        if "scaler" in state and use_scaler:
+            scaler.load_state_dict(state["scaler"])
+        start_epoch = int(state.get("epoch", -1)) + 1
+        iter_count = int(state.get("iter", 0))
+        print(f"[resume] {rp} → start_epoch={start_epoch} iter_count={iter_count}")
+
     metrics_path = out_dir / "metrics.csv"
     with open(metrics_path, "w", newline="") as f:
         csv.writer(f).writerow([
@@ -220,7 +241,6 @@ def main(cfg: DictConfig) -> None:
     epochs = int(cfg.train.epochs)
     max_iters = int(cfg.train.get("max_iters", 0))  # 0 = unlimited (정식 학습)
 
-    iter_count = 0
     t_start = time.monotonic()
     last_loss = None
     finished = False
@@ -284,7 +304,7 @@ def main(cfg: DictConfig) -> None:
                 break
         model.train()
 
-    for epoch in range(epochs):
+    for epoch in range(start_epoch, epochs):
         if finished:
             break
         model.train()

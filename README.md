@@ -1,163 +1,285 @@
-# harness_framework
+# fm-det
 
-이 레포지토리는 **하네스(Harness)를 만들기 위한 뼈대**입니다.
-실제 하네스 로직이 아니라, 하네스를 구성·실행·검증하는 데 필요한 공통 구조와 도구를 제공합니다.
+DiffusionDet 를 detectron2 없이 처음부터 재구현하고, 그 위에서 **diffusion → flow matching** 단계적으로 전환하면서 encoder/decoder/head/sampler/loss 의 ablation 으로 detection 에서 실제로 유효한 구성 요소를 정리하는 연구 프로젝트.
 
-> "하네스" = 모델·스크립트·실험 코드를 **재현 가능한 환경에서 일관된 방식으로 실행·검증**하기 위한 외피(Wrapper).
+> 산출물은 가중치가 아니라 **표에 채워진 결론** — DiffusionDet/FM 의 내부 동작을 직접 손으로 이해하는 것이 목표 ([docs/PRD.md](docs/PRD.md)).
 
 ---
 
-## Quick Start — 텅 빈 디렉터리에서 시작
+## Architecture (요약)
 
-새 프로젝트 디렉터리에서 다음 6단계를 따릅니다.
+```
+  Image [B,3,H,W]
+       │
+       ▼
+  ┌──────────────────┐
+  │ Backbone         │  ResNet50 + FPN  (p2..p5 [B,256,Hi,Wi])
+  └────────┬─────────┘
+           ▼
+  ┌──────────────────┐
+  │ Sampler          │  cosine β schedule, T=1000, DDIM eta=0
+  │  - 학습: GT + noise → noisy boxes
+  │  - 평가: random Gaussian → DDIM 4 step denoise
+  └────────┬─────────┘
+           ▼
+  ┌──────────────────┐
+  │ Decoder (×6)     │  iterative refinement, deep supervision
+  │  각 head:        │  RoIAlign → Self-Attn → DynamicConv → FFN → FiLM(time)
+  │                  │  → cls + box delta → 다음 head 의 boxes
+  └────────┬─────────┘
+           ▼
+  ┌──────────────────┐
+  │ Set Loss         │  Hungarian matching + focal cls + L1 + GIoU
+  │ (6 head 모두)    │  deep supervision (학습), 마지막 head 만 (평가)
+  └──────────────────┘
+```
 
-| 단계 | 무엇 | 어디서 |
-|------|------|------|
-| 1. 클론 | 빈 디렉터리에 이 뼈대 정본을 깐다 | 호스트 셸 (아래 코드블록) |
-| 2. `/bootstrap` | 종류별 docs 뼈대를 `docs/` 에 깐다 | Claude Code |
-| 3. docs 채우기 | `PRD.md → ARCHITECTURE.md → ADR.md` 순서로 본문 채움 | Claude 와 함께 |
-| 4. `/docker-init` | 종류·스택에 맞는 격리 환경을 `env_docker/` 안에 생성 — `Dockerfile` (멀티스테이지) + `docker-compose.yml` + 사이드 서비스 형제 | Claude Code |
-| 5. 컨테이너 진입 | **VS Code/Cursor Dev Containers (권장)** 또는 호스트 셸로 직접 | 호스트 IDE / 셸 |
-| 6. `/harness` → `execute.py` | 첫 phase 설계 → step 순차 실행 | 컨테이너 안의 Claude Code |
+자세한 stage-by-stage: [models/README.md](models/README.md) · [models/study_model.md](models/study_model.md).
 
-전체 흐름 (호스트 셸 + Claude Code 슬래시 명령):
+---
+
+## Training Setting
+
+| 항목 | VOC | COCO |
+|------|-----|------|
+| batch size | 32 | 16 |
+| optimizer | AdamW | AdamW |
+| epoch | 60 | 61 |
+| initial learning rate | 2.5e-5 | 2.5e-5 |
+| weight decay | 1e-4 | 1e-4 |
+| scheduler | MultiStepLR [47, 57] γ=0.1 | MultiStepLR [47, 57] γ=0.1 |
+| warmup | 1000 iter × factor 0.01 | 1000 iter × factor 0.01 |
+| grad_clip | 1.0 | 1.0 |
+| AMP | bfloat16 (Blackwell native) | bfloat16 |
+| seed | 42 | 42 |
+| train split | VOC2007 trainval + VOC2012 trainval | COCO train2017 |
+| eval split | VOC2007 test | COCO val2017 |
+| input resolution | short=800, max=1333 (전통 detection 해상도) | short=800, max=1333 |
+| num_proposals | 500 | 500 |
+| num_heads | 6 (deep supervision) | 6 |
+| signal_scale | 2.0 | 2.0 |
+
+### lr schedule
+
+| Epochs | Learning rate |
+|--------|---------------|
+| 0      | warmup: 2.5e-7 → 2.5e-5 (1000 iter linear, factor 0.01) |
+| 0–46   | 2.5e-5 |
+| 47–56  | 2.5e-6 (×0.1 at milestone 47) |
+| 57–60  | 2.5e-7 (×0.1 at milestone 57) |
+
+---
+
+## Results
+
+### VOC
+
+| methods | Training Dataset | Testing Dataset | Resolution | AP50 |
+|---------|------------------|-----------------|------------|------|
+| Faster R-CNN (참고) | 2007 + 2012 | 2007 | ~600 | 73.2 |
+| DETR (참고) | 2007 + 2012 | 2007 | short=800 | 69.5 |
+| DiffusionDet (paper) | — | — | — | (VOC baseline 없음) |
+| **ours** (epoch 26/60, mid-train) | 2007 + 2012 | 2007 | short=800 | **25.00** |
+| ours (학습 완료 후 목표) | 2007 + 2012 | 2007 | short=800 | 50~70 (예상) |
+
+per-class AP (epoch 26 / 60, last.pt, fix 후 — full eval 4,952 장):
+
+```
+25.90% = aeroplane AP
+28.78% = bicycle AP
+24.93% = bird AP
+21.68% = boat AP
+21.33% = bottle AP
+23.39% = bus AP
+26.87% = car AP
+28.34% = cat AP
+20.58% = chair AP
+26.61% = cow AP
+18.92% = diningtable AP
+27.63% = dog AP
+27.08% = horse AP
+27.15% = motorbike AP
+29.66% = person AP
+21.74% = pottedplant AP
+26.86% = sheep AP
+19.61% = sofa AP
+25.63% = train AP
+27.40% = tvmonitor AP
+mAP = 25.00%
+```
+
+> 모든 클래스 0.19~0.30 범위에 균등 — 한 클래스 stuck 없이 골고루 학습. 학습 epoch 26 / 60 (43% 진행) + lr decay 미적용 상태의 mid-train 결과. 다음 milestone (epoch 47, lr ×0.1) 에서 추가 boost 예상.
+
+### Loss 진행 (VOC, 학습 중)
+
+| epoch | iter | loss_total | lr |
+|-------|------|------------|-----|
+| 0 | 1 | 38.95 | 2.5e-7 (warmup) |
+| 0 | 499 | 13.38 | 1.26e-5 |
+| 1 | 999 | 10.71 | 2.50e-5 |
+| 3 | 1,999 | 7.60 | 2.50e-5 |
+| 9 | 4,999 | 4.83 | 2.50e-5 |
+| 19 | 9,999 | 3.68 | 2.50e-5 |
+| 26 | 13,529 | 3.59 | 2.50e-5 |
+
+### COCO
+
+| methods | Training Dataset | Testing Dataset | Resolution | AP | AP50 | AP75 |
+|---------|------------------|-----------------|------------|----|------|------|
+| DiffusionDet (paper) | COCO train2017 | COCO val2017 | short=800 | 46.2 | 65.0 | 49.4 |
+| **ours** | COCO train2017 | COCO val2017 | short=800 | TBD | TBD | TBD |
+
+COCO 학습 시도 (모두 중단 — 다음 재시작 예정):
+
+| 시도 | run_dir | iters | 결과 |
+|------|---------|-------|------|
+| 1차 | 0531 | 2,825 | NaN loss assertion (AMP fp16 overflow) |
+| 2차 | 0709 | 5,825 | 동일 NaN (warmup 으로 trigger 지연) |
+| 3차 | 0933 | 4,400 | SIGHUP 사망 (I-09 — 부모 Claude 세션 종료) |
+| 다음 | — | — | nohup setsid detach + bf16 + decoder fix 후 재시작 대기 |
+
+---
+
+## Qualitative — VOC inference overlay (epoch 26)
+
+GT = lime, prediction (score≥0.3) = red. eval coord fix (I-10) 후 같은 가중치로 추론.
+
+| | |
+|---|---|
+| ![dog+person](docs/assets/qualitative/voc_000001_dog_person.png) <br/>**2007/000001** — 강아지/사람 (top1 person=0.902) | ![cars](docs/assets/qualitative/voc_000004_cars.png) <br/>**2007/000004** — 거리 차들 (top1 car=0.906) |
+| ![horse+rider](docs/assets/qualitative/voc_000010_horse_rider.png) <br/>**2007/000010** — 말 + 라이더 (top1 person=0.922) | ![cat](docs/assets/qualitative/voc_000011_cat.png) <br/>**2007/000011** — 고양이 (top1 cat=0.914) |
+
+전체 8 장: `runs/20260523-1416-voc-repro-baseline/debug_out/overlay_*.png`.
+
+> 재현 도구: `phases/voc-repro-baseline/debug_eval_inference.py` — last.pt 로드 + overlay PNG + buggy/fixed mAP 비교.
+
+---
+
+## Start Guide
+
+호스트에는 **Docker + NVIDIA Container Toolkit** 만 있다고 가정. 모든 명령은 dev 컨테이너 안.
 
 ```bash
-# ─── 1. 클론 (호스트 셸) ─────────────────────────────────────────
-git clone https://github.com/csm-kr/harness_framework .
-rm -rf .git
-git init
+# 컨테이너 띄움 + 진입
+make up
+make shell           # 또는: docker compose -f env_docker/docker-compose.yml exec dev bash
 
-
-# ─── 2~4. 호스트에서 Claude Code 띄워 슬래시 명령 ────────────────
-claude            # 호스트 Claude Code 세션 시작 (IDE 의 Claude 확장도 OK)
-
-#   Claude 안에서 차례대로:
-#     /bootstrap            → 2. 종류·docs/ 뼈대 결정 (대안 제시 형태)
-#                             3. docs/PRD.md → ARCHITECTURE.md → ADR.md 본문을
-#                                Claude 와 함께 채움 (이 단계가 사실상 가장 오래 걸림)
-#     /docker-init          → 4. env_docker/{Dockerfile,docker-compose.yml,...} 생성
-#
-#   끝나면 호스트 Claude 세션은 종료해도 됨 (대화 히스토리는 컨테이너로 이어지지 않음).
-
-
-# ─── 5. 컨테이너 진입 — 두 가지 중 하나 ──────────────────────────
-
-# (A) Dev Containers 확장 (권장 — IDE 자체를 컨테이너에 붙임)
-#   VS Code / Cursor 에서:
-#   ① "Dev Containers" 확장 설치 (없으면)
-#   ② 명령 팔레트 → "Dev Containers: Reopen in Container"
-#   ③ env_docker/docker-compose.yml 의 dev 서비스를 선택
-#   → 터미널·언어 서버·디버거가 모두 컨테이너 환경에서 동작.
-#     아래 (B) 의 docker compose up/exec 도 자동으로 처리됨.
-
-# (B) 호스트 셸로 직접
-docker compose -f env_docker/docker-compose.yml up -d --build       # 백그라운드 띄움
-docker compose -f env_docker/docker-compose.yml exec dev bash       # 셸로 접속
-# (또는 /docker-init 이 함께 만든 Makefile 로: make up && make shell)
-
-
-# ─── 6. 컨테이너 안에서 Claude 새 세션 시작 → /harness → execute.py ─
-claude                       # 컨테이너 Claude Code (호스트 세션과 별개)
-
-#   Claude 안에서:
-#     /harness               → 첫 phase 설계 (phases/{task}/step{N}.md 생성)
-#     python3 scripts/execute.py {task}   → step 순차 실행 + 자동 커밋
+# 의존성 (editable install)
+pip install -e .
 ```
 
-요점:
-- `/bootstrap` 은 프로젝트명·한 줄 목적·종류(`web` / `mobile` / `backend` / `ai-ml` / `data-pipeline` / `cli-lib` / `custom`)를 **대안 제시 형태**로 묻고, 고른 종류에 맞춰 `docs/` 에 PRD/ARCHITECTURE/ADR + 추가 docs 를 깐다.
-- 각 docs 맨 위 "이 문서가 답하는 질문" 헤더가 무엇을 적을지 안내. 본문은 `{}` 플레이스홀더로 남아 있고 사용자가 Claude 와 함께 채운다.
-- 종류별 추가 docs (예: `web` → `UI_GUIDE.md`, `ai-ml` → `DATA_CARD.md`) 도 같은 방식.
-- **단계 1~4 는 호스트의 Claude Code 세션** (단순 파일 생성이라 호스트엔 Docker 만 있어도 OK). **단계 5 부터는 컨테이너 안의 새 Claude Code 세션** — 두 세션은 별개이므로 컨테이너 첫 메시지에서 `docs/` 와 `CLAUDE.md` 를 다시 읽도록 지시 (`/harness` 가 자동 처리).
-- IDE 관점: 파일은 bind mount 라 호스트 IDE 에서도 그대로 보이지만 빌드·테스트·`claude` 실행은 반드시 컨테이너 안. **Dev Containers 확장으로 IDE 자체를 컨테이너에 붙이는 게 가장 깔끔** — 터미널·확장·디버거가 모두 컨테이너 환경에서 일관되게 동작.
-- `exec` 로 들어간 셸은 `exit` 해도 컨테이너는 살아 있다. 작업을 완전히 마쳤을 때만 `docker compose -f env_docker/docker-compose.yml down` (또는 `make down`).
-- **호스트는 Docker 만 있다고 가정**. Python·Node 등 모든 런타임·도구는 dev 컨테이너 안에 살고, `claude` 도 그 안에서 실행한다. 호스트에서 `claude` 를 띄울 거라면 `.claude/skills/docker-init.md` 의 "Stop hook 옵션 B" 를 참고.
+### train
+
+학습은 **반드시 detach 해서 띄움** — 부모 세션 종료 시 SIGHUP 으로 같이 죽음 (I-09).
+
+```bash
+# VOC
+nohup setsid env TORCH_HOME=/workspace/fm-det/.cache/torch \
+  python train.py +experiment=voc-repro-baseline seed=42 \
+  > phases/voc-repro-baseline/train.log 2>&1 < /dev/null &
+
+# COCO
+nohup setsid env TORCH_HOME=/workspace/fm-det/.cache/torch \
+  python train.py +experiment=coco-repro-baseline seed=42 \
+  > phases/coco-repro-baseline/train.log 2>&1 < /dev/null &
+```
+
+### test (eval)
+
+```bash
+# VOC — mAP@0.5 (VOC2007 11-point interpolation)
+python eval.py data=voc model=diffusiondet loss=diffusion seed=42 \
+  run_dir=runs/{ts}-voc-repro-baseline \
+  ckpt=runs/{ts}-voc-repro-baseline/checkpoints/last.pt
+
+# COCO — mAP@0.5:0.95 (pycocotools COCOeval)
+python eval.py data=coco model=diffusiondet loss=diffusion seed=42 \
+  run_dir=runs/{ts}-coco-repro-baseline \
+  ckpt=runs/{ts}-coco-repro-baseline/checkpoints/last.pt
+```
+
+### resume
+
+```bash
+nohup setsid env TORCH_HOME=/workspace/fm-det/.cache/torch \
+  python train.py +experiment=voc-repro-baseline seed=42 \
+  +train.resume=runs/{ts}-voc-repro-baseline/checkpoints/last.pt \
+  > phases/voc-repro-baseline/train.log 2>&1 < /dev/null &
+```
+
+### inference + overlay (qualitative)
+
+```bash
+TORCH_HOME=/workspace/fm-det/.cache/torch PYTHONPATH=/workspace/fm-det \
+  python phases/voc-repro-baseline/debug_eval_inference.py \
+    --run_dir runs/{ts}-voc-repro-baseline \
+    --num_images 8 --ckpt last.pt
+# → runs/{ts}-voc-repro-baseline/debug_out/overlay_*.png
+```
+
+### TensorBoard
+
+```bash
+make tb              # http://localhost:6007  (compose 매핑 6006→6007)
+```
 
 ---
 
-## 멘탈 모델 — 이 레포는 "사람"처럼 구성돼 있습니다
+## Issues — 학습 과정에서 발견된 함정
 
-각 파일·폴더의 역할을 신체 비유로 보면 한눈에 잡힙니다.
+자세한 트래커: [docs/ISSUE.md](docs/ISSUE.md). 학습을 막거나 결과를 왜곡시켰던 주요 이슈.
 
-| 비유 | 자산 | 역할 |
-|------|------|------|
-| <sub>📜&nbsp;**헌법**</sub> | <sub>`CLAUDE.md`</sub> | <sub>프로젝트가 반드시 따라야 할 원칙 (종류·스택·CRITICAL). 모든 세션에 자동 주입 → 우선순위 1번.</sub> |
-| <sub>🤝&nbsp;**협업&nbsp;원칙**</sub> | <sub>`LLM_GUIDE.md`</sub> | <sub>Claude/LLM 4원칙: Think Before Coding / Simplicity First / Surgical Changes / Goal-Driven Execution. `CLAUDE.md` 가 참고.</sub> |
-| <sub>🧠&nbsp;**뇌&nbsp;(의도·지식)**</sub> | <sub>`docs/PRD.md`, `ARCHITECTURE.md`, `ADR.md` (+ 종류별 추가 docs)</sub> | <sub>"무엇을 / 누구에게 / 왜 / 어떻게 / 왜 이 결정". 다이어그램·cross-reference 포함.</sub> |
-| <sub>📋&nbsp;**계획서**</sub> | <sub>`phases/index.json`, `phases/{task}/step{N}.md`</sub> | <sub>"무엇을, 어떤 순서로". `/harness` 가 생성, `execute.py` 가 step 씩 실행.</sub> |
-| <sub>🦾&nbsp;**손&nbsp;(실행)**</sub> | <sub>`scripts/execute.py`, `scripts/test_execute.py`</sub> | <sub>step 순차 실행 + 자가 교정 + 자동 커밋 + 자동 테스트.</sub> |
-| <sub>🧬&nbsp;**신경계&nbsp;(자동&nbsp;반응)**</sub> | <sub>`.claude/settings.json`</sub> | <sub>`PreToolUse` 위험 명령 차단 / `Stop` 시 자동 테스트. ([HOOKS.md](docs/HOOKS.md))</sub> |
-| <sub>🎓&nbsp;**습관&nbsp;(반복&nbsp;능력)**</sub> | <sub>`.claude/skills/{bootstrap,docker-init,harness,review}.md` + `templates/{type}/`</sub> | <sub>슬래시 스킬 4종 + 종류별 템플릿 정본. ai-ml 종류면 bootstrap 이 `templates/ai-ml/{scripts,skills}/*` 를 사용자 프로젝트로 덮어써 `/harness` 가 ml 통합본으로 동작.</sub> |
-| <sub>🏠&nbsp;**환경&nbsp;(몸이&nbsp;사는&nbsp;곳)**</sub> | <sub>`env_docker/{Dockerfile,docker-compose.yml,...}` (생성물) ← `.claude/skills/docker_examples/` (참고 예시)</sub> | <sub>격리된 컨테이너. `/docker-init` 이 예시 패턴을 참고해 종류·스택에 맞게 dev 컨테이너 + 사이드 서비스를 형제로 생성. 환경 도커 파일 일체가 `env_docker/` 한 폴더에 — 루트는 사용자 프로젝트 영역으로 비워둠. **호스트는 Docker 만 있다고 가정** — 모든 런타임·도구는 컨테이너 안.</sub> |
-
-> 충돌이 생기면 항상 헌법(`CLAUDE.md`)이 우선합니다.
+| ID | 카테고리 | 증상 | 해결 |
+|----|---------|------|------|
+| **I-10** | eval | VOC mAP@0.5 ≈ 0 (epoch 0~25 내내) | `evals/voc.py` 의 pred sx,sy scaling 제거 — GT/pred 둘 다 cur 좌표 일치 |
+| **I-09** | tooling | 학습 python 이 traceback 없이 갑자기 사라짐 (COCO·VOC 다회) | `nohup setsid python ... < /dev/null &` 로 PPID=1 detach 강제 |
+| I-07 | setup | torch-cache named volume 이 root 소유 — pretrained 다운 실패 | `TORCH_HOME=/workspace/fm-det/.cache/torch` workaround |
+| I-04 | training | AMP fp16 의 NaN loss / DiffusionDet 본 repo 재현치 미검증 | AMP fp16 → bf16 (Blackwell native), P0 진행 중 |
+| R-08 | training | PyTorch sm_120 (Blackwell) 미지원 | base image → `pytorch:2.7.1-cuda12.8-cudnn9-devel` |
 
 ---
 
-## 🔄 표준 작업 흐름
+## Roadmap
 
-```
-0. 텅 빈 디렉터리 클론 (Quick Start 0️⃣)
-        ↓
-1. /bootstrap          → docs/ 에 종류별 뼈대 깔림
-        ↓ 사용자가 docs/PRD → ARCH → ADR 본문 채움 (Claude 와 함께)
-        ↓
-2. /docker-init        → env_docker/{Dockerfile, docker-compose.yml, ...} 생성
-        ↓
-3. /harness            → phases/{task}/step{N}.md 생성
-        ↓
-4. execute.py {task}   → step 순차 실행 + 자동 테스트 + 자동 커밋
-        ↓
-완료
-```
-
-| 단계 | 누가 | 결과물 |
-|------|------|--------|
-| 0. 클론 | 사람 | 정본이 깔린 빈 프로젝트 |
-| 1. `/bootstrap` | Claude (대안 제시 + 사용자 선택) | 종류별 `docs/` 뼈대 |
-| 1.5 docs 본문 | 사람 + Claude | 채워진 PRD/ARCH/ADR + 추가 docs |
-| 2. `/docker-init` | Claude | 종류·스택에 맞는 컨테이너 환경 |
-| 3. `/harness` | Claude (사람 검토·승인) | `phases/{task}/step{N}.md` |
-| 4. `execute.py` | 자동화 스크립트 | `feat-{task}` 브랜치의 step별 커밋 |
+1. ~~M0 부트스트래핑 + docs + 컨테이너~~ ✅
+2. ~~M1 data-sanity (COCO val)~~ ✅
+3. ~~M2 데이터 sanity 전체 (COCO val/train + VOC 07/12) + Hydra base + Dataset 클래스~~ ✅
+4. ~~code-skeleton-loaders / model-diffusiondet / loss-diffusiondet / entrypoints-evals~~ ✅
+5. **(지금)** **P0 VOC 학습** (epoch 26 / 60, resume 대기) + COCO 재시작
+6. P0 COCO 재현치 매칭 (AP 46.2 ± 0.5)
+7. P0a 메커니즘 진단 5 행 (signal-scale / box-renewal / iter-step / num-boxes / nms-iou)
+8. P1 — diffusion → flow matching (CFM sampler) 전환 시작
 
 ---
 
-## 📁 구성
+## Docs 트라이앵글
 
-| 경로 | 역할 |
+| 무엇 | 어디 |
 |------|------|
-| `CLAUDE.md` | 프로젝트 헌법 (플레이스홀더) — 종류·기술 스택·CRITICAL 규칙 |
-| `LLM_GUIDE.md` | Claude/LLM 코딩 4원칙 — `CLAUDE.md` 가 참고 |
-| `docs/PRD.md` | "무엇을·왜" — bootstrap 이 종류별로 깐 후 사용자가 채움 |
-| `docs/ARCHITECTURE.md` | "어떻게" — 시스템 구조·흐름·다이어그램·외부 의존 |
-| `docs/ADR.md` | "왜 이 결정" — 트레이드오프 기록 |
-| `docs/HOOKS.md` | 이 레포의 정본 hook 2개 설명 + 공식 문서 링크 |
-| `docs/{종류별 추가}` | 예: web → `UI_GUIDE.md`, `ACCESSIBILITY.md` / ai-ml → `DATA_CARD.md`, `MODEL_CARD.md`, `EVAL_PROTOCOL.md`, `EXPERIMENTS.md` |
-| `env_docker/{Dockerfile,docker-compose.yml,.dockerignore,docker-entrypoint.sh}` | 환경 도커 파일 일체 (멀티스테이지 + 서비스 토폴로지). `/docker-init` 이 생성. 기본 클론에는 없음. 루트는 사용자 프로젝트 자체 도커 영역으로 비워둠 |
-| `Makefile` (루트, 옵션) | `make up` / `make shell` 로 `docker compose -f env_docker/docker-compose.yml ...` 단축 |
-| `scripts/execute.py` | step 순차 실행 + 자가 교정 + 자동 커밋 |
-| `scripts/test_execute.py` | pytest 기반 자동 검증 (Stop hook 이 매 응답 종료 시 실행) |
-| `phases/{task}/...` | `/harness` 가 생성한 step 파일과 진행 상태 |
-| `.claude/settings.json` | Claude Code hooks (PreToolUse 차단, Stop 자동 검증) |
-| `.claude/skills/{bootstrap,docker-init,harness,review}.md` | 슬래시 스킬 정본 (SWE default — ai-ml 종류면 bootstrap 이 `templates/ai-ml/skills/harness.md` 로 덮어쓰기) |
-| `.claude/skills/templates/ai-ml/scripts/{execute,test_execute,crash_classifier}.py` | ml 통합본 정본 박물관. bootstrap 이 ai-ml 선택 시 `scripts/` 로 덮어쓰기 |
-| `.claude/skills/templates/ai-ml/skills/harness.md` | ml 라이프사이클 9 단계 정본. bootstrap 이 ai-ml 선택 시 `.claude/skills/harness.md` 로 덮어쓰기 |
-| `.claude/skills/templates/{type}/` | bootstrap 이 종류별로 `docs/` 에 복사하는 정본 (PRD/ARCH/ADR + 추가 docs) |
-| `.claude/skills/docker_examples/{Dockerfile,docker-compose.yml}` | `/docker-init` 이 참고하는 컨테이너 예시 (정본 — 손대지 않음). 환경은 프로젝트마다 달라지므로 패턴만 참고 |
+| **무엇/왜** | [docs/PRD.md](docs/PRD.md) — 한 줄 목적 + 성공 기준 (P0/P0a/P1~) |
+| **어떻게** | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — 루트 평탄 + Hydra + env_docker |
+| **왜 이 결정** | [docs/ADR.md](docs/ADR.md) — 5 개 ADR |
+| **현재 상태 (덮어쓰기)** | [docs/PENSIEVE.md](docs/PENSIEVE.md) — 한 화면 컨텍스트 회복 |
+| **이슈 트래커** | [docs/ISSUE.md](docs/ISSUE.md) — 진행 중 + 해결됨 누적 |
+| **실험 운영** | [docs/EXPERIMENTS.md](docs/EXPERIMENTS.md) — ablation 표 + 명명 + 완료 정의 |
+| 모델 카드 | [docs/MODEL_CARD.md](docs/MODEL_CARD.md) |
+| 평가 프로토콜 | [docs/EVAL_PROTOCOL.md](docs/EVAL_PROTOCOL.md) |
+| Hydra 학습 | [docs/HYDRA_GUIDE.md](docs/HYDRA_GUIDE.md) |
+| W&B 학습 | [docs/WANDB_GUIDE.md](docs/WANDB_GUIDE.md) |
 
 ---
 
-## 📐 개발 원칙
+## 의존성
 
-- **TDD** — 새 기능은 테스트 먼저, 그다음 구현. (`CLAUDE.md` 의 CRITICAL 규칙)
-- **LLM 협업 4원칙** — Think Before Coding / Simplicity First / Surgical Changes / Goal-Driven Execution. ([LLM_GUIDE.md](./LLM_GUIDE.md) 참고)
-- **커밋 메시지** — Conventional Commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`).
-- **언어** — 모든 코드·주석·문서·커밋 메시지는 한국어.
+- Python 3.11 + PyTorch 2.7.1 + cu128 (sm_120 Blackwell 공식 지원)
+- Hydra 1.3 + OmegaConf
+- pycocotools, TensorBoard, Weights & Biases
+- detectron2 **금지** (CLAUDE.md CRITICAL)
+
+레퍼런스 (읽기 전용): [`DiffusionDet/`](DiffusionDet/) — 본 repo. 새 코드는 import 하지 않음.
 
 ---
 
-## 🎯 목적
+## License
 
-이 뼈대를 기반으로 각 프로젝트에 맞는 하네스를 추가·확장해 나가는 것을 전제로 합니다.
-세부 설계와 결정 사항은 `docs/` 디렉터리의 문서를 참고하세요.
+Research/study purpose. Reference DiffusionDet © 원저자 (Apache 2.0).
