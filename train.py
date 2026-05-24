@@ -18,10 +18,12 @@ import os
 import random
 import subprocess
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import hydra
 import numpy as np
+import psutil
 import torch
 from omegaconf import DictConfig, OmegaConf
 from PIL import Image, ImageDraw
@@ -70,10 +72,14 @@ def _print_startup(cfg, out_dir, rev, n_train, n_eval, device, amp_enabled, amp_
     bar = "=" * 70
     optim_cfg = cfg.train.optimizer
     sch_cfg = cfg.train.scheduler
+    now_utc = datetime.now(timezone.utc)
+    now_kst = now_utc.astimezone(timezone(timedelta(hours=9)))
     lines = [
         bar,
         f"  fm-det training",
         bar,
+        f"  started    : {now_utc.strftime('%Y-%m-%d %H:%M:%S')} UTC  "
+        f"(= {now_kst.strftime('%H:%M:%S')} KST)",
         f"  data       : {cfg.data.name}  batch={cfg.data.batch_size}  num_classes={cfg.data.num_classes}",
         f"               train_imgs={n_train}  eval_imgs={n_eval}  iters/epoch={n_train // cfg.data.batch_size}",
         f"  model      : {cfg.model.name}  num_proposals={cfg.model.num_proposals}  heads={cfg.model.num_heads}",
@@ -86,7 +92,7 @@ def _print_startup(cfg, out_dir, rev, n_train, n_eval, device, amp_enabled, amp_
         f"  epochs     : {cfg.train.epochs}  log_interval={cfg.train.log_interval}  eval_interval_epoch={eval_interval}",
         f"  seed       : {cfg.seed}  device={device}  ({torch.cuda.get_device_name(0) if device.type=='cuda' else 'cpu'})",
         f"  git rev    : {rev[:12]}",
-        f"  out_dir    : {out_dir}",
+        f"  out_dir    : {out_dir}  (이름의 HHMM 은 UTC)",
         bar,
     ]
     print("\n".join(lines), flush=True)
@@ -206,6 +212,27 @@ def main(cfg: DictConfig) -> None:
 
     ckpt_dir = out_dir / "checkpoints"
     ckpt_dir.mkdir(exist_ok=True)
+
+    # ─── resume (선택) ───────────────────────────────────────────────
+    # cfg.train.resume = <ckpt path> 있으면 model/optim/sched/scaler 복원 + start_epoch 갱신.
+    # metrics.csv / eval_history.json 은 새 run_dir 의 새 파일로 시작 (이전 run_dir 은 그대로 보존).
+    resume_path = cfg.train.get("resume", None)
+    start_epoch = 0
+    iter_count = 0
+    if resume_path:
+        rp = Path(resume_path)
+        if not rp.exists():
+            raise FileNotFoundError(f"resume ckpt not found: {rp}")
+        state = torch.load(rp, map_location=device, weights_only=False)
+        model.load_state_dict(state["model"])
+        optim.load_state_dict(state["optim"])
+        multistep.load_state_dict(state["scheduler"])
+        if "scaler" in state and use_scaler:
+            scaler.load_state_dict(state["scaler"])
+        start_epoch = int(state.get("epoch", -1)) + 1
+        iter_count = int(state.get("iter", 0))
+        print(f"[resume] {rp} → start_epoch={start_epoch} iter_count={iter_count}")
+
     metrics_path = out_dir / "metrics.csv"
     with open(metrics_path, "w", newline="") as f:
         csv.writer(f).writerow([
@@ -219,7 +246,6 @@ def main(cfg: DictConfig) -> None:
     epochs = int(cfg.train.epochs)
     max_iters = int(cfg.train.get("max_iters", 0))  # 0 = unlimited (정식 학습)
 
-    iter_count = 0
     t_start = time.monotonic()
     last_loss = None
     finished = False
@@ -283,7 +309,7 @@ def main(cfg: DictConfig) -> None:
                 break
         model.train()
 
-    for epoch in range(epochs):
+    for epoch in range(start_epoch, epochs):
         if finished:
             break
         model.train()
@@ -362,8 +388,26 @@ def main(cfg: DictConfig) -> None:
                 tb_writer.add_scalar("train/grad_norm", gnorm, iter_count)
             tb_writer.add_scalar("train/lr", cur_lr, iter_count)
             if iter_count % log_interval == 0 or iter_count == 1:
+                # 메모리 모니터링 — OOM kill 직전의 마지막 print 가 peak 흔적이 됨.
+                # rss = 컨테이너 안 python process 가 쓰는 host RAM (anonymous + shared).
+                # host_avail = 호스트 RAM 의 available (kernel 의 free + reclaimable buffer/cache).
+                # gpu_alloc / gpu_peak = torch CUDA allocator 의 현재 / 역대 peak (MB).
+                rss_gb = psutil.Process(os.getpid()).memory_info().rss / 1e9
+                vm = psutil.virtual_memory()
+                host_used_gb = vm.used / 1e9
+                host_avail_gb = vm.available / 1e9
+                host_swap_used_gb = psutil.swap_memory().used / 1e9
+                gpu_alloc_gb = torch.cuda.memory_allocated() / 1e9 if device.type == "cuda" else 0
+                gpu_peak_gb = torch.cuda.max_memory_allocated() / 1e9 if device.type == "cuda" else 0
                 print(f"[epoch {epoch} iter {iter_count}] loss={last_loss:.4f} "
-                      f"grad_norm={gnorm:.2f} lr={cur_lr:.2e}")
+                      f"grad_norm={gnorm:.2f} lr={cur_lr:.2e}  "
+                      f"| rss={rss_gb:.1f}G host_avail={host_avail_gb:.1f}G "
+                      f"swap={host_swap_used_gb:.1f}G gpu={gpu_alloc_gb:.1f}/{gpu_peak_gb:.1f}G", flush=True)
+                tb_writer.add_scalar("system/rss_gb", rss_gb, iter_count)
+                tb_writer.add_scalar("system/host_avail_gb", host_avail_gb, iter_count)
+                tb_writer.add_scalar("system/host_swap_gb", host_swap_used_gb, iter_count)
+                tb_writer.add_scalar("system/gpu_alloc_gb", gpu_alloc_gb, iter_count)
+                tb_writer.add_scalar("system/gpu_peak_gb", gpu_peak_gb, iter_count)
             # epoch 내에서도 1000 iter 마다 last.pt 저장 (crash 시 손실 최소화)
             if iter_count % 1000 == 0:
                 torch.save({

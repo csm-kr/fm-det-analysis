@@ -24,6 +24,48 @@
 
 ## 진행 중 (open / blocked)
 
+### I-11: eval 에 NMS 미적용 — 한 객체에 중복 박스 → mAP 25% 천장 (실제 가중치는 70% 수준)
+- **상태**: resolved (2026-05-24 — evals/voc.py 와 evals/coco.py 에 per-class `torchvision.ops.batched_nms` (iou=0.5) 추가)
+- **발견일**: 2026-05-24
+- **카테고리**: eval
+- **증상**: I-10 (좌표계 fix) 적용 후에도 VOC mAP@0.5 가 0.2500 에서 정체. per-class AP 0.19~0.30 으로 균등하지만 천장이 낮음. inference overlay 보면 한 객체에 여러 head 의 refined box 가 같은 영역에 중복.
+- **원인**: `evals/voc.py` / `evals/coco.py` 가 top-K 만 추출하고 NMS 를 적용하지 않음. 500 proposals × C class 중 score 상위 100 개를 그대로 prediction 으로 사용 → 한 객체에 N 개 박스가 있으면 가장 score 높은 1 개만 TP, 나머지 N-1 개는 모두 FP → mAP 하락. 원본 DiffusionDet inference 는 NMS `iou_thresh=0.5` 적용 (`DiffusionDet/.../diffusiondet.py` 의 `inference_*` 분기).
+- **해결책 / 우회**: per-class NMS — `torchvision.ops.batched_nms(boxes, scores, class_idx, iou_threshold=0.5)`. [N, C] → [N*C] 펼침 → score thresh 먼저 (대부분 < 0.05 라 NMS 부담 경감) → batched_nms → top-100. 같은 ckpt (epoch 29 last.pt) VOC07 test full eval:
+  - 좌표 fix 전: mAP@0.5 = 0.0000
+  - 좌표 fix 후 (NMS 없음): mAP@0.5 = **0.2500**
+  - 좌표 fix + NMS: mAP@0.5 = **0.7002** (+45 점, ~3 배)
+- **재발 방지**: 새 eval pipeline 작성 시 (a) GT 좌표계 (b) NMS (c) score thresh (d) max_dets 네 가지 명시. evals/{voc,coco}.py 의 `nms_thresh` 파라미터 기본값 0.5 로 박힘. **mAP 가 짝수 비율 (예: 25%) 에서 멈춰서 더 안 오르면 첫 의심은 NMS 누락**.
+
+### I-10: VOC eval 가 prediction 만 orig 좌표로 scale 하고 GT 는 cur 좌표로 둠 — mAP≈0 false-negative (실제 학습 정상)
+- **상태**: resolved (2026-05-23 — evals/voc.py 의 prediction sx, sy scaling 제거, 둘 다 cur 좌표에서 비교)
+- **발견일**: 2026-05-23
+- **카테고리**: eval
+- **증상**: VOC 학습이 epoch 0~25 내내 metric_primary=mAP@0.5≈0.0001 (per_class 거의 다 0). loss 는 38.95 → 3.5 로 정상 감소. eval 만 망가진 듯한 패턴 ("학습 안 되는 것 같다" 의문).
+- **원인**: `datasets/transforms.py:46-51` 의 RandomResize 가 tgt["boxes"] 를 cur(resized) 좌표로 scale. `datasets/voc/dataset.py:87` 에서 tgt["size"] 는 cur 로 갱신되지만 tgt["orig_size"] 는 그대로 orig. `evals/voc.py:62-64` 가 prediction 만 `sx = orig_w/cur_w, sy = orig_h/cur_h` 로 scale 해서 orig 좌표로 보냄. 결과: pred(orig 좌표) vs GT(cur 좌표) box_iou → IoU 거의 0 → 모든 prediction FP → mAP≈0. 8 장 sanity check 결과 fix 후 mAP@0.5 = **0.0000 → 0.3251** (epoch 25 last.pt).
+- **해결책 / 우회**: `evals/voc.py` 의 prediction sx, sy scaling 제거 (둘 다 cur 좌표에서 비교). mAP 의 정의는 ratio-based 라 좌표계 절대값 무관, 일치만 보장하면 됨. evals/coco.py 는 pycocotools 가 coco_gt(json, orig 좌표) 와 비교하므로 prediction → orig scale 이 *맞음* (다른 케이스). 둘을 헷갈리지 말 것.
+- **재발 방지**:
+  - 새 eval lib 추가 시 "GT 가 어디서 오는지" (target dict 인지 외부 ann json 인지) 와 "transforms 가 GT 를 건드리는지" 두 축 확인.
+  - mAP=0 + loss 정상 감소 패턴이면 첫 의심은 **train/eval 좌표계 mismatch** (또는 class idx off-by-one). `phases/voc-repro-baseline/debug_eval_inference.py` 가 fix 전후 mAP 비교 + GT/pred overlay PNG 산출 — 다음에 같은 의심 시 첫 도구.
+  - 학습 시작 시 epoch 1 후 mAP 가 정확히 0.0 (random init 보다도 낮음) 이면 즉시 eval 의심. random init 모델의 lower bound 가 0.001-0.003 정도이므로 epoch 1 에서 0.0000 은 의심 신호.
+
+### I-09: 학습 python 프로세스가 부모 Claude 세션 종료 시 SIGHUP 으로 같이 사망 (no traceback)
+- **상태**: resolved (2026-05-23 — 재시작 시 `nohup setsid ... < /dev/null &` 패턴으로 PPID=1 detach)
+- **발견일**: 2026-05-23
+- **카테고리**: tooling / training
+- **증상**: P0 COCO (run_dir 0709, 0933) 와 VOC (run_dir 1233) 학습이 모두 **train.log 에 traceback 없이** 갑자기 멈춤. last 로그 라인이 정상 iter (예: VOC `iter 1800 loss=23.04 grad=67`) → 다음 raw 가 없음. metrics.csv 마지막 raw 와 같은 시각에 끊김. `ps -p <pid>` 찾을 수 없음 (`/proc/<pid>` 없음). GPU 점유 0%. 호스트 RAM·swap 여유 있음 (OOM 아님). dmesg 접근 불가 (컨테이너 내 root 아님).
+- **원인**: 학습을 시작한 다른 Claude 세션 (PID 1537208 같은 별도 `claude` 프로세스) 이 종료될 때, 그 세션이 띄운 `python train.py` 가 child 였다면 **SIGHUP 전파로 같이 종료**. python 은 SIGHUP 의 default handler (terminate) 를 그대로 받음 → traceback 없이 silent exit. `nohup` 만으로는 부족할 수 있고 (setsid 가 없으면 같은 process group 에 머무름) — 진짜 detach 하려면 **`nohup setsid python ... < /dev/null > log 2>&1 &`** 로 새 session/pgrp + stdin 단절 까지 모두 필요.
+- **해결책 / 우회**:
+  - **재시작 패턴 (PPID=1 보장)**:
+    ```bash
+    nohup setsid env TORCH_HOME=/workspace/fm-det/.cache/torch \
+      python train.py +experiment={tag} seed=42 \
+      > phases/{tag}/train.log 2>&1 < /dev/null &
+    # 진짜 python pid 는 setsid 후 fork 된 child — pgrep -af "train.py.*{tag}" 의 PPID=1 짜리.
+    pgrep -af "train.py.*{tag}" | head -1 | awk '{print $1}' > phases/{tag}/train.pid
+    ```
+  - **검증**: `ps -p <pid> -o ppid,pgid,sid,stat,cmd` 에서 PPID=1, SID==PID, STAT 에 `s` (session leader) 포함이어야 함.
+- **재발 방지**: 모든 장시간 학습은 **launcher script 의 한 줄로** 위 패턴 강제. `scripts/launch_train.sh` 같은 정본 헬퍼 신설을 다음 phase 에서 검토. 또한 `phases/{tag}/train.pid` 의 PID 가 PPID=1 짜리 python 인지 launch 직후 검증 한 줄 (`ps -o ppid= -p $(cat train.pid)` == 1) 추가 권장. `phases/{tag}/step0.md` 의 명령 예시도 `nohup setsid ... < /dev/null` 패턴으로 갱신 권장 (현재는 `nohup ... &` 만).
+
 ### I-08: execute.py 의 `_verify_success_metric` 가 `{run_dir}` 없는 code-only success_metric 을 강제 error 처리
 - **상태**: resolved (2026-05-22 — code patch 적용)
 - **발견일**: 2026-05-22

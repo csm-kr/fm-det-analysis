@@ -7,8 +7,8 @@ train_split: voc-trainval-combined  # VOC07 trainval + VOC12 trainval
 eval_split: voc07-test
 
 batch_size: 32  # bf16 + 96GB GPU 메모리 여유 활용. VOC 는 본 repo baseline 없음 → 자체 baseline 이라 effective batch 변경 OK. lr scaling 은 안 함 (한 변수만 변경).
-num_workers: 8
-pin_memory: true
+num_workers: 4   # batch 32 + bf16 환경에서 8 은 호스트 RAM 30GB OOM (peak 27GB). 4 로 prefetch 부담 절반.
+pin_memory: false  # pinned page 가 host RAM 압박 — 단일 GPU 환경에서 H2D 가속 효과 미미
 
 transforms:
   train:

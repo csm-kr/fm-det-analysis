@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import numpy as np
 import torch
-from torchvision.ops import box_iou
+from torchvision.ops import batched_nms, box_iou
 
 
 def _voc_ap_11pt(rec: np.ndarray, prec: np.ndarray) -> float:
@@ -23,8 +23,11 @@ def _voc_ap_11pt(rec: np.ndarray, prec: np.ndarray) -> float:
 @torch.no_grad()
 def voc_eval(model, loader, device, num_classes: int = 20,
              iou_thresh: float = 0.5, score_thresh: float = 0.05,
-             max_dets_per_image: int = 100) -> dict:
+             nms_thresh: float = 0.5, max_dets_per_image: int = 100) -> dict:
     """VOC2007 mAP@0.5.
+
+    inference 후 per-class NMS (torchvision.ops.batched_nms, iou_thresh=nms_thresh) 적용
+    → 한 객체에 중복된 head 출력 박스 제거 (원본 DiffusionDet 동치).
 
     GT 의 difficult flag 는 VOCDetection 의 drop_difficult 처리에 의존 (DATA_CARD 참고).
     """
@@ -45,28 +48,37 @@ def voc_eval(model, loader, device, num_classes: int = 20,
         for b in range(B):
             tgt = targets[b]
             image_id = int(tgt["image_id"])
-            orig_h, orig_w = tgt["orig_size"]
-            cur_h, cur_w = tgt["size"]
-            sx = orig_w / max(cur_w, 1)
-            sy = orig_h / max(cur_h, 1)
 
+            # GT 와 prediction 모두 *transformed (cur)* 좌표계에서 비교.
+            # transforms.py 의 RandomResize 가 tgt["boxes"] 를 cur 좌표로 scale 하고,
+            # model 도 cur 좌표로 박스를 뱉기 때문에 두 쪽 모두 cur 에서 일치시킴
+            # (이전 버전: pred 만 sx, sy 로 orig 으로 scale → GT 와 좌표계 mismatch → mAP≈0).
             gt_boxes = tgt["boxes"].clone().cpu().float()
             gt_labels = tgt["labels"].clone().cpu().long()
             gts[image_id] = (gt_labels, gt_boxes)
 
-            scs_b = scores[b].reshape(-1)
-            k = min(max_dets_per_image, scs_b.numel())
-            top_scores, top_idx = scs_b.topk(k)
-            box_idx = top_idx // C
-            cls_idx = top_idx % C
-            boxes_b = boxes[b][box_idx].clone()
-            boxes_b[:, 0::2] = boxes_b[:, 0::2] * sx
-            boxes_b[:, 1::2] = boxes_b[:, 1::2] * sy
-            for j in range(k):
-                s = float(top_scores[j])
-                if s < score_thresh:
-                    continue
-                preds.append((image_id, int(cls_idx[j]), s, boxes_b[j].cpu()))
+            # per-class NMS 를 위해 [N, C] → [N*C] 로 펼침. 각 box 는 C 회 복제됨.
+            scs_b = scores[b]                          # [N, C]
+            bxs_b = boxes[b]                           # [N, 4]
+            N_b = scs_b.shape[0]
+            flat_boxes = bxs_b.unsqueeze(1).expand(N_b, C, 4).reshape(-1, 4)
+            flat_scores = scs_b.reshape(-1)
+            flat_classes = torch.arange(C, device=scs_b.device).unsqueeze(0).expand(N_b, C).reshape(-1)
+            # score thresh 먼저 — 대부분 (>99%) 이 thresh 미만 → NMS 부담 경감
+            keep_mask = flat_scores >= score_thresh
+            flat_boxes = flat_boxes[keep_mask]
+            flat_scores = flat_scores[keep_mask]
+            flat_classes = flat_classes[keep_mask]
+            if flat_boxes.numel() == 0:
+                continue
+            # per-class NMS — idxs=class 라 클래스 마다 독립 NMS
+            keep = batched_nms(flat_boxes, flat_scores, flat_classes, iou_threshold=nms_thresh)
+            keep = keep[:max_dets_per_image]
+            kept_boxes = flat_boxes[keep].cpu()
+            kept_scores = flat_scores[keep].cpu()
+            kept_classes = flat_classes[keep].cpu()
+            for j in range(kept_boxes.shape[0]):
+                preds.append((image_id, int(kept_classes[j]), float(kept_scores[j]), kept_boxes[j]))
 
     per_class_ap: list[float] = []
     for c in range(num_classes):
@@ -121,4 +133,5 @@ def voc_eval(model, loader, device, num_classes: int = 20,
         "num_classes": int(num_classes),
         "iou_thresh": float(iou_thresh),
         "score_thresh": float(score_thresh),
+        "nms_thresh": float(nms_thresh),
     }

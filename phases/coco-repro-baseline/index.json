@@ -41,15 +41,15 @@
       "status": "pending",
       "resumable": true,
       "resume_from": "runs/{run_dir}/checkpoints/last.pt",
-      "started_at": "2026-05-23T16:09:56+0900",
-      "training_pid": 1291109,
+      "started_at": "2026-05-23T18:34:16+0900",
+      "training_pid": 1388783,
       "run_dirs": [
-        "20260523-0709-coco-repro-baseline"
+        "20260523-0933-coco-repro-baseline"
       ],
       "estimated_eta": "2-5 day (61 epoch × 7392 iter, iter ≈ 0.4-1.0s)",
-      "resume_command": "TORCH_HOME=/workspace/fm-det/.cache/torch python train.py +experiment=coco-repro-baseline seed=42 +train.resume=runs/20260523-0709-coco-repro-baseline/checkpoints/last.pt",
-      "eval_command": "TORCH_HOME=/workspace/fm-det/.cache/torch python eval.py +experiment=coco-repro-baseline seed=42 run_dir=runs/20260523-0709-coco-repro-baseline",
-      "status_note": "재시작 (iter 1 loss=34.87, lr=2.5e-7 warmup ✓). 정상 진행.",
+      "resume_command": "TORCH_HOME=/workspace/fm-det/.cache/torch python train.py +experiment=coco-repro-baseline seed=42 +train.resume=runs/20260523-0933-coco-repro-baseline/checkpoints/last.pt",
+      "eval_command": "TORCH_HOME=/workspace/fm-det/.cache/torch python eval.py data=coco model=diffusiondet loss=diffusion seed=42 run_dir=runs/20260523-0933-coco-repro-baseline ckpt=runs/20260523-0933-coco-repro-baseline/checkpoints/last.pt",
+      "status_note": "fp32 학습 진행 중. iter 1 loss=34.7993 grad_norm=16751 (실제 값, AMP scaler fake NaN 사라짐). GPU 100% util / 38GB mem.",
       "tensorboard_pid": 1221355,
       "tensorboard_url": "http://localhost:6007  (compose 매핑 6006→6007)",
       "previous_attempt": {
@@ -57,7 +57,21 @@
         "iters_completed": 2825,
         "elapsed_sec": 2319,
         "crash": "NaN loss assertion at iter 2825 — fix: train.py 의 strict assertion 을 본 DiffusionDet repo 패턴 (skip + 경고) 으로 변경 + warmup 1000 iter (configs/train/baseline.yaml 정의분 적용) + 1000 iter 마다 last.pt 저장."
-      }
+      },
+      "previous_attempts": [
+        {
+          "run_dir": "0531-coco-repro-baseline",
+          "iters": 2825,
+          "crash": "NaN loss assertion (AMP fp16)"
+        },
+        {
+          "run_dir": "0709-coco-repro-baseline",
+          "iters": 5825,
+          "crash": "NaN loss infinite loop (AMP fp16, warmup 으로 trigger 지연)"
+        }
+      ],
+      "fix_applied": "AMP fp16 → fp32 (configs/train/baseline.yaml amp: false). 원본 DiffusionDet 동일. fp32 dynamic range 가 fp16 의 NaN overflow 차단. 시간 2배 (5-10일 예상), 메모리 ~38GB → 60-80GB.",
+      "fallback_plan": "fp32 에서도 NaN 발생 시 → bfloat16 (configs/train/baseline.yaml amp: true + AMP autocast dtype=torch.bfloat16 override). Blackwell sm_120 bf16 native, fp16 보다 안정."
     },
     {
       "step": 1,

@@ -1,0 +1,60 @@
+======================================================================
+  fm-det training
+======================================================================
+  data       : voc  batch=32  num_classes=20
+               train_imgs=16551  eval_imgs=4952  iters/epoch=517
+  model      : diffusiondet  num_proposals=500  heads=6
+  loss       : diffusion_set_loss  focal(α=0.25,γ=2.0)  cls×2.0  l1×5.0  giou×2.0
+  optimizer  : AdamW  lr=2.5e-05  weight_decay=0.0001
+  scheduler  : MultiStepLR  milestones=[47, 57]  gamma=0.1
+  warmup     : 1000 iter × factor 0.01
+  amp        : enabled=True  dtype=bfloat16  grad_clip=1.0
+  epochs     : 60  log_interval=50  eval_interval_epoch=1
+  seed       : 42  device=cuda  (NVIDIA RTX PRO 6000 Blackwell Max-Q Workstation Edition)
+  git rev    : c0efa6a02262
+  out_dir    : /workspace/fm-det/runs/20260523-1233-voc-repro-baseline
+======================================================================
+[epoch 0 iter 1] loss=35.0570 grad_norm=15369.83 lr=2.50e-07  | rss=3.0G host_avail=18.8G swap=1.3G gpu=2.3/64.9G
+[epoch 0 iter 50] loss=27.8828 grad_norm=8565.90 lr=1.46e-06  | rss=3.1G host_avail=18.7G swap=1.3G gpu=2.3/75.8G
+[epoch 0 iter 100] loss=25.1012 grad_norm=8291.29 lr=2.70e-06  | rss=3.1G host_avail=18.8G swap=1.3G gpu=2.3/76.9G
+[epoch 0 iter 150] loss=25.3553 grad_norm=5963.01 lr=3.94e-06  | rss=3.2G host_avail=18.1G swap=1.3G gpu=2.4/80.5G
+[epoch 0 iter 200] loss=24.9118 grad_norm=4490.20 lr=5.18e-06  | rss=3.2G host_avail=18.4G swap=1.3G gpu=2.3/80.5G
+[epoch 0 iter 250] loss=23.3066 grad_norm=2869.54 lr=6.41e-06  | rss=3.3G host_avail=18.8G swap=1.3G gpu=2.4/80.5G
+[epoch 0 iter 300] loss=21.9530 grad_norm=2080.85 lr=7.65e-06  | rss=3.4G host_avail=17.7G swap=1.3G gpu=2.5/80.5G
+[epoch 0 iter 350] loss=22.3121 grad_norm=1693.70 lr=8.89e-06  | rss=3.3G host_avail=17.9G swap=1.3G gpu=2.4/80.5G
+[epoch 0 iter 400] loss=23.0904 grad_norm=1120.40 lr=1.01e-05  | rss=3.3G host_avail=18.2G swap=1.3G gpu=2.3/80.5G
+[epoch 0 iter 450] loss=23.3266 grad_norm=842.25 lr=1.14e-05  | rss=3.1G host_avail=18.1G swap=1.3G gpu=2.2/80.5G
+[epoch 0 iter 500] loss=22.4185 grad_norm=601.21 lr=1.26e-05  | rss=3.2G host_avail=18.1G swap=1.3G gpu=2.2/80.5G
+[epoch 0] running eval ...
+[epoch 0] eval metric_primary=0.0000 (261.7s)
+[epoch 0] best.pt saved (metric_primary=0.0000)
+[epoch 1 iter 550] loss=23.7309 grad_norm=452.88 lr=1.38e-05  | rss=3.8G host_avail=17.7G swap=1.3G gpu=2.4/80.5G
+[epoch 1 iter 600] loss=22.3899 grad_norm=313.22 lr=1.51e-05  | rss=3.7G host_avail=17.0G swap=1.3G gpu=2.2/80.5G
+[epoch 1 iter 650] loss=23.5116 grad_norm=237.06 lr=1.63e-05  | rss=3.8G host_avail=17.1G swap=1.3G gpu=2.3/80.5G
+[epoch 1 iter 700] loss=22.0554 grad_norm=139.72 lr=1.76e-05  | rss=3.9G host_avail=17.2G swap=1.3G gpu=2.4/80.5G
+[epoch 1 iter 750] loss=23.0142 grad_norm=247.55 lr=1.88e-05  | rss=3.8G host_avail=16.6G swap=1.3G gpu=2.3/80.5G
+[epoch 1 iter 800] loss=22.8251 grad_norm=216.61 lr=2.00e-05  | rss=3.8G host_avail=17.3G swap=1.3G gpu=2.3/80.5G
+[epoch 1 iter 850] loss=22.5267 grad_norm=99.22 lr=2.13e-05  | rss=3.5G host_avail=17.1G swap=1.4G gpu=2.3/80.5G
+[epoch 1 iter 900] loss=22.3752 grad_norm=120.49 lr=2.25e-05  | rss=3.6G host_avail=16.9G swap=1.4G gpu=2.3/80.5G
+[epoch 1 iter 950] loss=22.4599 grad_norm=112.33 lr=2.37e-05  | rss=3.5G host_avail=17.6G swap=1.4G gpu=2.3/80.5G
+[epoch 1 iter 1000] loss=22.5724 grad_norm=76.29 lr=2.50e-05  | rss=3.5G host_avail=17.0G swap=1.4G gpu=2.3/80.5G
+[epoch 1] running eval ...
+[epoch 1] eval metric_primary=0.0000 (262.9s)
+[epoch 2 iter 1050] loss=21.9059 grad_norm=149.04 lr=2.50e-05  | rss=3.8G host_avail=16.2G swap=1.4G gpu=2.3/80.5G
+[epoch 2 iter 1100] loss=22.2137 grad_norm=73.89 lr=2.50e-05  | rss=3.9G host_avail=15.9G swap=1.4G gpu=2.4/80.5G
+[epoch 2 iter 1150] loss=21.8025 grad_norm=82.33 lr=2.50e-05  | rss=3.9G host_avail=15.8G swap=1.4G gpu=2.4/80.5G
+[epoch 2 iter 1200] loss=23.4897 grad_norm=96.57 lr=2.50e-05  | rss=3.9G host_avail=16.0G swap=1.4G gpu=2.4/80.5G
+[epoch 2 iter 1250] loss=22.4767 grad_norm=95.26 lr=2.50e-05  | rss=3.5G host_avail=16.5G swap=1.4G gpu=2.3/80.5G
+[epoch 2 iter 1300] loss=22.4027 grad_norm=51.92 lr=2.50e-05  | rss=3.5G host_avail=16.6G swap=1.4G gpu=2.3/80.5G
+[epoch 2 iter 1350] loss=22.7601 grad_norm=70.10 lr=2.50e-05  | rss=3.6G host_avail=16.6G swap=1.4G gpu=2.4/80.5G
+[epoch 2 iter 1400] loss=23.3983 grad_norm=101.62 lr=2.50e-05  | rss=3.5G host_avail=15.8G swap=1.4G gpu=2.3/80.5G
+[epoch 2 iter 1450] loss=22.8397 grad_norm=101.89 lr=2.50e-05  | rss=3.6G host_avail=16.1G swap=1.4G gpu=2.3/80.5G
+[epoch 2 iter 1500] loss=22.8631 grad_norm=51.99 lr=2.50e-05  | rss=3.6G host_avail=16.4G swap=1.4G gpu=2.3/80.5G
+[epoch 2 iter 1550] loss=22.0759 grad_norm=53.83 lr=2.50e-05  | rss=3.5G host_avail=20.4G swap=1.4G gpu=2.2/80.5G
+[epoch 2] running eval ...
+[epoch 2] eval metric_primary=0.0000 (263.7s)
+[epoch 3 iter 1600] loss=22.8861 grad_norm=42.23 lr=2.50e-05  | rss=3.9G host_avail=16.2G swap=1.4G gpu=2.3/80.5G
+[epoch 3 iter 1650] loss=22.0423 grad_norm=69.87 lr=2.50e-05  | rss=3.6G host_avail=16.3G swap=1.4G gpu=2.4/80.5G
+[epoch 3 iter 1700] loss=22.6399 grad_norm=119.90 lr=2.50e-05  | rss=3.6G host_avail=16.5G swap=1.4G gpu=2.3/80.5G
+[epoch 3 iter 1750] loss=23.9105 grad_norm=86.01 lr=2.50e-05  | rss=3.7G host_avail=16.2G swap=1.4G gpu=2.4/80.5G
+[epoch 3 iter 1800] loss=23.0454 grad_norm=67.89 lr=2.50e-05  | rss=3.6G host_avail=16.1G swap=1.4G gpu=2.3/80.5G

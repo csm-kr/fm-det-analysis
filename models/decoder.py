@@ -211,12 +211,16 @@ class DetectionHead(nn.Module):
         ], dim=-1)
 
     def forward(self, features: list[torch.Tensor], bboxes: torch.Tensor,
-                proposal_features: torch.Tensor, time_emb: torch.Tensor):
+                proposal_features: torch.Tensor | None, time_emb: torch.Tensor):
         B, N, _ = bboxes.shape
 
         # RoIAlign per scale → [B*N, 256, 7, 7] → reshape to [B*N, 49, 256] for DynamicConv
         roi_features = self._multi_scale_roi_align(features, bboxes)
         roi_features = roi_features.flatten(2).permute(0, 2, 1)  # [B*N, 49, 256]
+
+        # 원본 head.py:247-248 — 첫 head 는 pro 가 None → roi feature spatial mean 으로 init
+        if proposal_features is None:
+            proposal_features = roi_features.mean(dim=1).reshape(B, N, self.d_model)
 
         # proposal_features: [B, N, d_model] → [N, B, d_model] for nn.MHA
         pro = proposal_features.permute(1, 0, 2)  # [N, B, d]
@@ -226,29 +230,31 @@ class DetectionHead(nn.Module):
         pro = pro + self.dropout1(pro2)
         pro = self.norm1(pro)
 
-        # 2. dynamic conv
-        pro_for_dyn = pro.reshape(1, B * N, self.d_model)  # [1, B*N, d]
-        pro2 = self.inst_interact(pro_for_dyn, roi_features)  # [B*N, d]
-        pro2 = pro2.reshape(N, B, self.d_model)
+        # 2. dynamic conv — pro 와 roi 의 (batch, proposal) ordering 정합 필수
+        # pro: [N, B, d] → permute → [B, N, d] → reshape → batch-major [1, B*N, d]
+        # roi: _multi_scale_roi_align 결과가 batch-major [B*N, 49, d]
+        # (원본 head.py:259 동치 — view+permute+reshape)
+        pro_for_dyn = pro.permute(1, 0, 2).reshape(1, B * N, self.d_model)
+        pro2 = self.inst_interact(pro_for_dyn, roi_features)  # [B*N, d] batch-major
+        pro2 = pro2.reshape(B, N, self.d_model).permute(1, 0, 2)  # → [N, B, d]
         pro = pro + self.dropout2(pro2)
         pro = self.norm2(pro)
 
-        # 3. FiLM-style time modulation (scale + shift)
-        scale_shift = self.block_time_mlp(time_emb)  # [B, 2*d]
-        scale, shift = scale_shift.chunk(2, dim=-1)  # [B, d] each
-        # pro is [N, B, d], broadcast over N
-        pro = pro * (scale[None, :, :] + 1.0) + shift[None, :, :]
-
-        # 4. FFN
+        # 3. FFN (원본은 FFN 후 FiLM — head.py:265-275)
         pro2 = self.linear2(self.dropout(self.activation(self.linear1(pro))))
         pro = pro + self.dropout3(pro2)
         pro = self.norm3(pro)
 
-        # 5. heads
-        cls_feat = pro
+        # 4. FiLM-style time modulation — FFN 결과에 적용
+        scale_shift = self.block_time_mlp(time_emb)  # [B, 2*d]
+        scale, shift = scale_shift.chunk(2, dim=-1)  # [B, d] each
+        fc = pro * (scale[None, :, :] + 1.0) + shift[None, :, :]  # [N, B, d]
+
+        # 5. cls / reg heads — FiLM 결과를 분기 입력으로 (원본: fc_feature.clone())
+        cls_feat = fc
         for layer in self.cls_module:
             cls_feat = layer(cls_feat)
-        reg_feat = pro
+        reg_feat = fc
         for layer in self.reg_module:
             reg_feat = layer(reg_feat)
 
@@ -281,6 +287,15 @@ class Decoder(nn.Module):
             nn.Linear(d_model * 4, d_model * 4),
         )
 
+        # 원본 head.py:112-121 — xavier_uniform_ on all weights, focal bias 재적용
+        prior_prob = 0.01
+        bias_value = -math.log((1 - prior_prob) / prior_prob)
+        for p in self.parameters():
+            if p.dim() > 1:
+                nn.init.xavier_uniform_(p)
+            if p.shape[-1] == num_classes:
+                nn.init.constant_(p, bias_value)
+
     def forward(self, features: list[torch.Tensor], init_bboxes: torch.Tensor,
                 t: torch.Tensor, is_eval: bool = False) -> tuple[torch.Tensor, torch.Tensor]:
         """features: list[Tensor[B,256,Hi,Wi]]. init_bboxes: [B,N,4] xyxy. t: [B] long.
@@ -290,8 +305,8 @@ class Decoder(nn.Module):
         """
         B, N, _ = init_bboxes.shape
         time_emb = self.time_mlp(t.float())  # [B, d*4]
-        # init proposal_features = zeros (DiffusionDet 동치 — head 가 채움)
-        pro = torch.zeros(B, N, self.d_model, device=init_bboxes.device, dtype=features[0].dtype)
+        # 원본 head.py:161 — 첫 head 는 pro=None 으로 시작 (head 내부에서 roi mean 으로 init)
+        pro: torch.Tensor | None = None
 
         bboxes = init_bboxes
         cls_list, bbox_list = [], []
@@ -300,6 +315,8 @@ class Decoder(nn.Module):
             if not is_eval:
                 cls_list.append(class_logits)
                 bbox_list.append(bboxes)
+            # 원본 DiffusionDet head.py:168 — head 간 gradient 차단 (iterative refinement)
+            bboxes = bboxes.detach()
 
         if is_eval:
             return class_logits[:, None], bboxes[:, None]  # [B,1,N,C], [B,1,N,4]

@@ -8,7 +8,7 @@ defaults:
 seed: ???
 device: cuda
 tag: baseline
-output_dir: runs/${now:%Y%m%d-%H%M}-${tag}
+output_dir: runs/${now:%Y%m%d-%H%MUTC}-${tag}  # 컨테이너 = UTC. KST 보려면 +9h.
 
 hydra:
   run:

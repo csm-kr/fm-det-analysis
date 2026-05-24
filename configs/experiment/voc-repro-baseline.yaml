@@ -8,8 +8,7 @@ defaults:
 tag: voc-repro-baseline
 seed: 42
 
-data:
-  batch_size: 16
+# data.batch_size 는 configs/data/voc.yaml 의 default (32) 사용 — bf16 + 96GB GPU 여유.
 
 train:
   epochs: 60

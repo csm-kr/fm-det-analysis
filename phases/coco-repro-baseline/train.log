@@ -1,11 +1,97 @@
 loading annotations into memory...
-Done (t=7.03s)
+Done (t=6.93s)
 creating index...
 index created!
 loading annotations into memory...
-Done (t=0.18s)
+Done (t=0.17s)
 creating index...
 index created!
-[epoch 0 iter 1] loss=34.8745 grad_norm=nan lr=2.50e-07
-[epoch 0 iter 50] loss=28.0180 grad_norm=15033.56 lr=1.46e-06
-[epoch 0 iter 100] loss=26.5844 grad_norm=9345.09 lr=2.70e-06
+[epoch 0 iter 1] loss=34.7993 grad_norm=16751.01 lr=2.50e-07
+[epoch 0 iter 50] loss=28.2119 grad_norm=13330.21 lr=1.46e-06
+[epoch 0 iter 100] loss=26.6292 grad_norm=8934.80 lr=2.70e-06
+[epoch 0 iter 150] loss=26.9430 grad_norm=5931.70 lr=3.94e-06
+[epoch 0 iter 200] loss=27.4890 grad_norm=4600.69 lr=5.18e-06
+[epoch 0 iter 250] loss=26.5341 grad_norm=4093.01 lr=6.41e-06
+[epoch 0 iter 300] loss=24.8776 grad_norm=3444.24 lr=7.65e-06
+[epoch 0 iter 350] loss=27.2393 grad_norm=2649.45 lr=8.89e-06
+[epoch 0 iter 400] loss=25.5003 grad_norm=1609.45 lr=1.01e-05
+[epoch 0 iter 450] loss=23.7723 grad_norm=893.47 lr=1.14e-05
+[epoch 0 iter 500] loss=24.6044 grad_norm=586.11 lr=1.26e-05
+[epoch 0 iter 550] loss=26.4102 grad_norm=490.30 lr=1.38e-05
+[epoch 0 iter 600] loss=24.2851 grad_norm=658.69 lr=1.51e-05
+[epoch 0 iter 650] loss=24.8609 grad_norm=396.49 lr=1.63e-05
+[epoch 0 iter 700] loss=23.7019 grad_norm=228.47 lr=1.76e-05
+[epoch 0 iter 750] loss=26.5364 grad_norm=216.90 lr=1.88e-05
+[epoch 0 iter 800] loss=23.9984 grad_norm=158.13 lr=2.00e-05
+[epoch 0 iter 850] loss=24.7790 grad_norm=191.82 lr=2.13e-05
+[epoch 0 iter 900] loss=25.3547 grad_norm=125.27 lr=2.25e-05
+[epoch 0 iter 950] loss=24.6380 grad_norm=84.36 lr=2.37e-05
+[epoch 0 iter 1000] loss=25.5494 grad_norm=148.42 lr=2.50e-05
+[epoch 0 iter 1050] loss=25.4591 grad_norm=112.91 lr=2.50e-05
+[epoch 0 iter 1100] loss=23.6174 grad_norm=112.57 lr=2.50e-05
+[epoch 0 iter 1150] loss=25.8737 grad_norm=83.03 lr=2.50e-05
+[epoch 0 iter 1200] loss=25.6364 grad_norm=85.65 lr=2.50e-05
+[epoch 0 iter 1250] loss=24.9216 grad_norm=54.49 lr=2.50e-05
+[epoch 0 iter 1300] loss=24.4825 grad_norm=121.05 lr=2.50e-05
+[epoch 0 iter 1350] loss=25.7186 grad_norm=38.33 lr=2.50e-05
+[epoch 0 iter 1400] loss=26.0035 grad_norm=112.04 lr=2.50e-05
+[epoch 0 iter 1450] loss=25.5076 grad_norm=81.39 lr=2.50e-05
+[epoch 0 iter 1500] loss=24.4604 grad_norm=58.40 lr=2.50e-05
+[epoch 0 iter 1550] loss=24.1911 grad_norm=71.61 lr=2.50e-05
+[epoch 0 iter 1600] loss=23.4462 grad_norm=59.09 lr=2.50e-05
+[epoch 0 iter 1650] loss=27.2466 grad_norm=54.71 lr=2.50e-05
+[epoch 0 iter 1700] loss=25.1662 grad_norm=103.59 lr=2.50e-05
+[epoch 0 iter 1750] loss=24.5172 grad_norm=102.48 lr=2.50e-05
+[epoch 0 iter 1800] loss=24.2386 grad_norm=73.30 lr=2.50e-05
+[epoch 0 iter 1850] loss=22.6477 grad_norm=50.45 lr=2.50e-05
+[epoch 0 iter 1900] loss=23.9042 grad_norm=64.44 lr=2.50e-05
+[epoch 0 iter 1950] loss=25.8839 grad_norm=87.81 lr=2.50e-05
+[epoch 0 iter 2000] loss=23.8118 grad_norm=41.33 lr=2.50e-05
+[epoch 0 iter 2050] loss=25.4470 grad_norm=86.48 lr=2.50e-05
+[epoch 0 iter 2100] loss=25.2267 grad_norm=65.98 lr=2.50e-05
+[epoch 0 iter 2150] loss=24.3247 grad_norm=34.67 lr=2.50e-05
+[epoch 0 iter 2200] loss=25.2382 grad_norm=83.21 lr=2.50e-05
+[epoch 0 iter 2250] loss=24.9254 grad_norm=66.78 lr=2.50e-05
+[epoch 0 iter 2300] loss=24.3265 grad_norm=94.43 lr=2.50e-05
+[epoch 0 iter 2350] loss=24.6882 grad_norm=54.66 lr=2.50e-05
+[epoch 0 iter 2400] loss=24.8087 grad_norm=68.62 lr=2.50e-05
+[epoch 0 iter 2450] loss=24.4551 grad_norm=62.23 lr=2.50e-05
+[epoch 0 iter 2500] loss=24.9342 grad_norm=54.97 lr=2.50e-05
+[epoch 0 iter 2550] loss=25.3663 grad_norm=65.16 lr=2.50e-05
+[epoch 0 iter 2600] loss=22.7406 grad_norm=58.64 lr=2.50e-05
+[epoch 0 iter 2650] loss=24.5283 grad_norm=43.29 lr=2.50e-05
+[epoch 0 iter 2700] loss=25.0593 grad_norm=34.48 lr=2.50e-05
+[epoch 0 iter 2750] loss=24.0568 grad_norm=28.45 lr=2.50e-05
+[epoch 0 iter 2800] loss=24.5459 grad_norm=59.57 lr=2.50e-05
+[epoch 0 iter 2850] loss=25.2200 grad_norm=79.98 lr=2.50e-05
+[epoch 0 iter 2900] loss=23.3259 grad_norm=60.13 lr=2.50e-05
+[epoch 0 iter 2950] loss=26.4842 grad_norm=68.20 lr=2.50e-05
+[epoch 0 iter 3000] loss=24.7487 grad_norm=30.58 lr=2.50e-05
+[epoch 0 iter 3050] loss=24.8770 grad_norm=37.49 lr=2.50e-05
+[epoch 0 iter 3100] loss=24.7143 grad_norm=43.99 lr=2.50e-05
+[epoch 0 iter 3150] loss=24.2718 grad_norm=47.67 lr=2.50e-05
+[epoch 0 iter 3200] loss=22.5541 grad_norm=48.52 lr=2.50e-05
+[epoch 0 iter 3250] loss=24.1563 grad_norm=58.98 lr=2.50e-05
+[epoch 0 iter 3300] loss=25.9115 grad_norm=55.23 lr=2.50e-05
+[epoch 0 iter 3350] loss=24.6170 grad_norm=59.04 lr=2.50e-05
+[epoch 0 iter 3400] loss=24.4627 grad_norm=52.77 lr=2.50e-05
+[epoch 0 iter 3450] loss=24.2495 grad_norm=46.17 lr=2.50e-05
+[epoch 0 iter 3500] loss=24.4694 grad_norm=84.13 lr=2.50e-05
+[epoch 0 iter 3550] loss=25.1718 grad_norm=41.29 lr=2.50e-05
+[epoch 0 iter 3600] loss=24.7935 grad_norm=43.32 lr=2.50e-05
+[epoch 0 iter 3650] loss=24.8183 grad_norm=43.16 lr=2.50e-05
+[epoch 0 iter 3700] loss=24.5105 grad_norm=35.34 lr=2.50e-05
+[epoch 0 iter 3750] loss=25.3789 grad_norm=32.17 lr=2.50e-05
+[epoch 0 iter 3800] loss=24.8131 grad_norm=53.95 lr=2.50e-05
+[epoch 0 iter 3850] loss=25.9428 grad_norm=37.78 lr=2.50e-05
+[epoch 0 iter 3900] loss=26.6234 grad_norm=50.07 lr=2.50e-05
+[epoch 0 iter 3950] loss=24.3242 grad_norm=68.39 lr=2.50e-05
+[epoch 0 iter 4000] loss=24.4333 grad_norm=58.79 lr=2.50e-05
+[epoch 0 iter 4050] loss=25.3478 grad_norm=35.84 lr=2.50e-05
+[epoch 0 iter 4100] loss=24.7964 grad_norm=40.44 lr=2.50e-05
+[epoch 0 iter 4150] loss=25.5169 grad_norm=30.11 lr=2.50e-05
+[epoch 0 iter 4200] loss=24.1484 grad_norm=44.17 lr=2.50e-05
+[epoch 0 iter 4250] loss=24.5213 grad_norm=67.93 lr=2.50e-05
+[epoch 0 iter 4300] loss=23.5353 grad_norm=52.01 lr=2.50e-05
+[epoch 0 iter 4350] loss=24.4267 grad_norm=56.65 lr=2.50e-05
+[epoch 0 iter 4400] loss=26.3634 grad_norm=52.81 lr=2.50e-05

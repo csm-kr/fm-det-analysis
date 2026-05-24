@@ -12,11 +12,13 @@ from typing import Iterable
 
 import torch
 from pycocotools.cocoeval import COCOeval
+from torchvision.ops import batched_nms
 
 
 @torch.no_grad()
 def coco_eval(model, loader, device,
-              score_thresh: float = 0.05, max_dets_per_image: int = 100,
+              score_thresh: float = 0.05, nms_thresh: float = 0.5,
+              max_dets_per_image: int = 100,
               verbose: bool = True) -> dict:
     """COCO 2017 detection mAP.
 
@@ -51,29 +53,38 @@ def coco_eval(model, loader, device,
             sx = orig_w / max(cur_w, 1)
             sy = orig_h / max(cur_h, 1)
 
-            scs_b = scores[b].reshape(-1)
-            k = min(max_dets_per_image, scs_b.numel())
-            top_scores, top_idx = scs_b.topk(k)
-            box_idx = top_idx // C
-            cls_idx = top_idx % C
-            boxes_b = pred_boxes[b][box_idx].clone()
-            boxes_b[:, 0::2] = boxes_b[:, 0::2] * sx
-            boxes_b[:, 1::2] = boxes_b[:, 1::2] * sy
-
-            for j in range(k):
-                s = float(top_scores[j])
-                if s < score_thresh:
-                    continue
-                x1, y1, x2, y2 = boxes_b[j].tolist()
+            # per-class NMS — [N, C] → [N*C] 펼침, score thresh 후 batched_nms
+            scs_b = scores[b]                          # [N, C]
+            bxs_b = pred_boxes[b]                      # [N, 4] cur 좌표
+            N_b = scs_b.shape[0]
+            flat_boxes = bxs_b.unsqueeze(1).expand(N_b, C, 4).reshape(-1, 4)
+            flat_scores = scs_b.reshape(-1)
+            flat_classes = torch.arange(C, device=scs_b.device).unsqueeze(0).expand(N_b, C).reshape(-1)
+            keep_mask = flat_scores >= score_thresh
+            flat_boxes = flat_boxes[keep_mask]
+            flat_scores = flat_scores[keep_mask]
+            flat_classes = flat_classes[keep_mask]
+            if flat_boxes.numel() == 0:
+                continue
+            keep = batched_nms(flat_boxes, flat_scores, flat_classes, iou_threshold=nms_thresh)
+            keep = keep[:max_dets_per_image]
+            kept_boxes = flat_boxes[keep].clone()
+            kept_scores = flat_scores[keep]
+            kept_classes = flat_classes[keep]
+            # NMS 후 orig 좌표로 scale (COCO 는 pycocotools 가 orig 좌표 GT json 과 비교)
+            kept_boxes[:, 0::2] = kept_boxes[:, 0::2] * sx
+            kept_boxes[:, 1::2] = kept_boxes[:, 1::2] * sy
+            for j in range(kept_boxes.shape[0]):
+                x1, y1, x2, y2 = kept_boxes[j].tolist()
                 w = x2 - x1
                 h = y2 - y1
                 if w <= 0 or h <= 0:
                     continue
                 predictions.append({
                     "image_id": image_id,
-                    "category_id": int(idx_to_cat[int(cls_idx[j])]),
+                    "category_id": int(idx_to_cat[int(kept_classes[j])]),
                     "bbox": [x1, y1, w, h],
-                    "score": s,
+                    "score": float(kept_scores[j]),
                 })
 
     result = {
